@@ -1,0 +1,10 @@
+# pyproject.toml
+[project]
+name = "castle_defendor"
+version = "0.0.1"
+description = "pygame-ce test project" 
+require-python = ">=3.10"
+
+dependencies = [
+  "pygame-ce",
+  ]
