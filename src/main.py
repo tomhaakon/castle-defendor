@@ -10,6 +10,8 @@ BOTTOM_FRACTION = 1 / 4  # bottom quarter is castle
 ENEMY_SIZE = 40
 BASE_ENEMY_SPEED = 120
 
+GOLD_PER_KILL = 10
+GOLD_PER_WAVE_CLEAR = 20
 
 DEFENCE_STATS = {
     "archer": {
@@ -18,6 +20,7 @@ DEFENCE_STATS = {
         "cooldown": 0.4,
         "proj_speed": 450,
         "color": (255, 255, 0),
+        "base_cost": 30,
     },
     "cannon": {
         "damage": 25,
@@ -25,6 +28,7 @@ DEFENCE_STATS = {
         "cooldown": 1.1,
         "proj_speed": 350,
         "color": (200, 200, 200),
+        "base_cost": 50,
     },
     "mage": {
         "damage": 12,
@@ -32,6 +36,7 @@ DEFENCE_STATS = {
         "cooldown": 0.7,
         "proj_speed": 400,
         "color": (150, 80, 255),
+        "base_cost": 40,
     },
 }
 
@@ -102,25 +107,47 @@ class Enemy:
 
 
 class Defence:
-    def __init__(self, x, y, defence_type="archer"):
+    def __init__(self, x, y, defence_type="archer", level=1):
         self.pos = pygame.Vector2(x, y)
         self.defence_type = defence_type
+        self.level = level
 
         stats = DEFENCE_STATS[defence_type]
 
-        self.damage = stats["damage"]
-        self.range = stats["range"]
+        self.base_damage = stats["damage"]
+        self.base_range = stats["range"]
 
-        self.attack_cooldown = stats["cooldown"]
-        self.projectile_speed = stats["proj_speed"]
+        self.base_cooldown = stats["cooldown"]
+        self.base_projectile_speed = stats["proj_speed"]
         self.projectile_color = stats["color"]
+        self.base_cost = stats["base_cost"]
 
         self.time_since_last_shot = 0.0
+
+    def recalculate_stats(self):
+        # scale based on level
+        self.damage = self.base_damage * (1.0 + 0.3 * (self.level - 1))
+        self.range = self.base_range * (1.0 + 0.1 * (self.level - 1))
+
+        self.attack_cooldown = max(
+            0.15, self.base_cooldown * (1.0 - 0.07 * (self.level - 1))
+        )
+
+        self.projectile_speed = self.base_projectile_speed * (
+            1.0 + 0.1 * (self.level - 1)
+        )
+
+    def upgrade(self):
+        self.level += 1
+        self.recalculate_stats()
+
+    def get_upgrade_cost(self) -> int:
+        return int(self.base_cost * self.level)
 
     def update(self, dt, enemies, projectiles):
         # cd
         self.time_since_last_shot += dt
-        if self.time_since_last_shot < self.attack_cooldown:
+        if self.time_since_last_shot < self.base_cooldown:
             return
 
         # find enemy in  range
@@ -129,7 +156,7 @@ class Defence:
             if enemy.is_dead:
                 continue
 
-            if self.pos.distance_to(enemy.pos) <= self.range:
+            if self.pos.distance_to(enemy.pos) <= self.base_range:
                 target = enemy
                 break
 
@@ -142,10 +169,16 @@ class Defence:
             return
 
         direction = direction.normalize()
-        velocity = direction * self.projectile_speed
+        velocity = direction * self.base_projectile_speed
 
         projectiles.append(
-            Projectile(self.pos, velocity, self.damage, max_distance=self.range)
+            Projectile(
+                self.pos,
+                velocity,
+                self.base_damage,
+                max_distance=self.base_range,
+                color=self.projectile_color,
+            )
         )
         self.time_since_last_shot = 0.0
 
@@ -196,7 +229,7 @@ class Projectile:
         if self.is_dead:
             return
         pygame.draw.circle(
-            surface, (255, 255, 0), (int(self.pos.x), int(self.pos.y)), self.radius
+            surface, self.color, (int(self.pos.x), int(self.pos.y)), self.radius
         )
 
 
@@ -239,6 +272,49 @@ class Game:
         self.selected_slot: int | None = None
 
         self.init_defence()
+
+        self.gold = 200
+
+    def draw_gold(self, screen, font):
+        text = f"Gold: {self.gold}"
+        surf = font.render(text, True, (255, 215, 0))
+        rect = surf.get_rect(topright=(WIDTH - 20, 20))
+        screen.blit(surf, rect)
+
+        if self.selected_slot is not None:
+            defence = self.slot_defences[self.selected_slot]
+            if defence is not None:
+                cost = defence.get_upgrade_cost()
+                hint = (
+                    f"U: Upgrade {defence.defence_type} (Lv{defence.level}) for {cost}g"
+                )
+            else:
+                hint = "No defence in this slot"
+        else:
+            hint = "Click slot to select. Right-click to change type. U to upgrade."
+
+        hint_surf = font.render(hint, True, (230, 230, 230))
+        hint_rect = hint_surf.get_rect(topright=(WIDTH - 20, 45))
+        screen.blit(hint_surf, hint_rect)
+
+    def upgrade_selected_slot(self):
+        if self.selected_slot is None:
+            return
+
+        defence = self.slot_defences[self.selected_slot]
+        if defence is None:
+            return
+
+        cost = defence.get_upgrade_cost()
+        if self.gold < cost:
+            print("Not enough gold for upgrade:", cost)
+            return
+
+        self.gold -= cost
+        defence.upgrade()
+        print(
+            f"Upgraded {defence.defence_type} to level {defence.level}, spent {cost} gold (remaining {self.gold})"
+        )
 
     # ---------- RECT HELPERS ----------
     def get_spawn_rect(self):
@@ -321,7 +397,10 @@ class Game:
 
             # Rebuild the defence with same position but new type
             x, y = defence.pos.x, defence.pos.y
-            self.slot_defences[slot_index] = Defence(x, y, defence_type=new_type)
+            level = defence.level
+            self.slot_defences[slot_index] = Defence(
+                x, y, defence_type=new_type, level=level
+            )
 
         # Refresh positions + flat list
         self.update_defence_positions_from_slots()
@@ -402,6 +481,8 @@ class Game:
                 if event.key == pygame.K_SPACE:
                     if self.can_spawn_wave():
                         self.spawn_wave()
+                if event.key == pygame.K_u:
+                    self.upgrade_selected_slot()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = event.pos
@@ -444,6 +525,8 @@ class Game:
 
         if not self.is_game_over:
 
+            had_enemies_before = len(self.enemies) > 0
+
             # update enemies and calc dmg
             damage_this_frame = 0.0
             for enemy in self.enemies:
@@ -463,13 +546,22 @@ class Game:
             for defence in self.defences:
                 defence.update(dt, self.enemies, self.projectiles)
 
+            alive_before = sum(1 for e in self.enemies if not e.is_dead)
+
             for proj in self.projectiles:
                 proj.update(dt, self.enemies)
+
+            alive_after = sum(1 for e in self.enemies if not e.is_dead)
+            killed_this_frame = alive_before - alive_after
+            if killed_this_frame > 0:
+                self.gold += killed_this_frame * GOLD_PER_KILL
 
             self.projectiles = [p for p in self.projectiles if not p.is_dead]
             self.enemies = [e for e in self.enemies if not e.is_dead]
 
-            # later: remove dead enemies
+            if had_enemies_before and len(self.enemies) == 0 and not self.is_game_over:
+                bonus = GOLD_PER_WAVE_CLEAR * max(1, self.wave_number)
+                self.gold += bonus
 
     # ---------- DRAW ----------
     def draw(self):
@@ -481,6 +573,7 @@ class Game:
         pygame.draw.rect(self.screen, (120, 120, 150), castle_rect, width=1)
 
         self.draw_castle_hp(self.screen, self.font)
+        self.draw_gold(self.screen, self.font)
         self.draw_wave_button(self.screen, self.font, self.wave_number)
 
         for defence in self.defences:
@@ -623,6 +716,12 @@ class Game:
                 icon_text = font.render(type_letter, True, (0, 0, 0))
                 icon_text_rect = icon_text.get_rect(center=icon_rect.center)
                 screen.blit(icon_text, icon_text_rect)
+
+                level_text = font.render(f"Lv{defence.level}", True, (255, 255, 255))
+                lvl_rect = level_text.get_rect(
+                    midbottom=(rect.centerx, rect.bottom - 6)
+                )
+                screen.blit(level_text, lvl_rect)
 
 
 # -----------------------------
