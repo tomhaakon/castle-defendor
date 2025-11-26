@@ -59,6 +59,8 @@ class Game:
         self.running = True
 
         self.font = pygame.font.SysFont(None, 24)
+        self.big_font = pygame.font.SysFont(None, 72)
+
         self.slot_labels = ["slot_1", "slot_2", "slot_3", "slot_4", "slot_5"]
 
         # wave / enemies
@@ -71,6 +73,9 @@ class Game:
 
         # dps per attacking enemy
         self.castle_damage_per_second_per_enemy = 5.0
+
+        # game state
+        self.is_game_over = False
 
     # ---------- RECT HELPERS ----------
     def get_spawn_rect(self):
@@ -95,6 +100,10 @@ class Game:
 
     # ---------- WAVES ----------
     def spawn_wave(self):
+
+        if self.is_game_over:
+            return
+
         self.wave_number += 1
         spawn_rect = self.get_spawn_rect()
 
@@ -137,19 +146,25 @@ class Game:
     def update(self, dt):
         castle_rect = self.get_castle_rect()
 
-        # update enemies and calc dmg
-        damage_this_frame = 0.0
-        for enemy in self.enemies:
-            enemy.update(dt, castle_rect)
+        if not self.is_game_over:
 
-            if enemy.state == "attacking" and self.castle_hp > 0:
-                damage_this_frame += self.castle_damage_per_second_per_enemy * dt
+            # update enemies and calc dmg
+            damage_this_frame = 0.0
+            for enemy in self.enemies:
+                enemy.update(dt, castle_rect)
 
-        # apply dmg
-        if damage_this_frame > 0:
-            self.castle_hp = max(0.0, self.castle_hp - damage_this_frame)
+                if enemy.state == "attacking" and self.castle_hp > 0:
+                    damage_this_frame += self.castle_damage_per_second_per_enemy * dt
 
-        # later: remove dead enemies
+            # apply dmg
+            if damage_this_frame > 0:
+                self.castle_hp = max(0.0, self.castle_hp - damage_this_frame)
+
+            if self.castle_hp <= 0:
+                self.castle_hp = 0
+                self.is_game_over = True
+
+            # later: remove dead enemies
 
     # ---------- DRAW ----------
     def draw(self):
@@ -165,6 +180,9 @@ class Game:
 
         for enemy in self.enemies:
             enemy.draw(self.screen)
+
+        if self.is_game_over:
+            self.draw_game_overlay(self.screen)
 
         pygame.display.flip()
 
@@ -223,6 +241,24 @@ class Game:
         text_surf = font.render(hp_text, True, (255, 255, 255))
         text_rect = text_surf.get_rect(midleft=(x, y - 8))
         screen.blit(text_surf, text_rect)
+
+    def draw_game_overlay(self, screen):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))  # semi-transparent black
+        screen.blit(overlay, (0, 0))
+
+        # big text
+        text_surf = self.big_font.render("GAME OVER", True, (255, 255, 255))
+        text_rect = text_surf.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 30))
+
+        screen.blit(text_surf, text_rect)
+
+        # small hint
+
+        small = self.font.render("Press ESC to quit", True, (220, 220, 220))
+        small_rect = small.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 20))
+
+        screen.blit(small, small_rect)
 
     @staticmethod
     def draw_slots(screen, font, labels):
