@@ -15,10 +15,13 @@ BASE_ENEMY_SPEED = 120
 # ENEMY CLASS
 # -----------------------------
 class Enemy:
-    def __init__(self, x, y, speed):
+    def __init__(self, x, y, speed, max_hp=30):
         self.pos = pygame.Vector2(x, y)
         self.speed = speed
         self.state = "moving"  # "moving" or "attacking"
+        self.max_hp = max_hp
+        self.hp = max_hp
+        self.is_dead = False
 
     def get_rect(self):
         rect = pygame.Rect(0, 0, ENEMY_SIZE, ENEMY_SIZE)
@@ -27,6 +30,9 @@ class Enemy:
 
     def update(self, dt, castle_rect):
         """Update enemy movement and collision with castle."""
+        if self.is_dead:
+            return
+
         if self.state == "moving":
             # move down
             self.pos.y += self.speed * dt
@@ -37,13 +43,124 @@ class Enemy:
                 # snap to top of castle
                 self.pos.y = castle_rect.top - ENEMY_SIZE / 2
 
+    def take_damage(self, amount):
+        if self.is_dead:
+            return
+        self.hp -= amount
+        if self.hp <= 0:
+            self.hp = 0
+            self.is_dead = True
+
     def draw(self, surface):
+        if self.is_dead:
+            return
+
         rect = self.get_rect()
         if self.state == "attacking":
             color = (50, 200, 50)  # green
         else:
             color = (200, 50, 50)  # red
         pygame.draw.rect(surface, color, rect)
+
+        # hp text on top
+        font = pygame.font.SysFont(None, 18)
+        txt = font.render(str(int(self.hp)), True, (255, 255, 255))
+        txt_rect = txt.get_rect(center=(rect.centerx, rect.top - 10))
+        surface.blit(txt, txt_rect)
+
+
+# -----------------------------
+# DEFENCE CLASS
+# -----------------------------
+
+
+class Defence:
+    def __init__(self, x, y, damage=10, range_pixels=250, attack_cooldown=0.5):
+        self.pos = pygame.Vector2(x, y)
+        self.damage = damage
+        self.range = range_pixels
+        self.attack_cooldown = attack_cooldown
+        self.time_since_last_shot = 0.0
+
+    def update(self, dt, enemies, projectiles):
+        # cd
+        self.time_since_last_shot += dt
+        if self.time_since_last_shot < self.attack_cooldown:
+            return
+
+        # find enemy in  range
+        target = None
+        for enemy in enemies:
+            if enemy.is_dead:
+                continue
+
+            if self.pos.distance_to(enemy.pos) <= self.range:
+                target = enemy
+                break
+
+        if target is None:
+            return
+
+        # fire projectile
+        direction = target.pos - self.pos
+        if direction.length_squared() == 0:
+            return
+
+        direction = direction.normalize()
+        projectile_speed = 400  # px per sec
+        velocity = direction * projectile_speed
+
+        projectiles.append(
+            Projectile(self.pos, velocity, self.damage, max_distance=self.range)
+        )
+        self.time_since_last_shot = 0.0
+
+    def draw(self, surface):
+        rect = pygame.Rect(0, 0, 30, 30)
+        rect.center = self.pos
+        pygame.draw.rect(surface, (80, 160, 220), rect, border_radius=4)
+
+
+# -----------------------------
+# PROJECTILE  CLASS
+# -----------------------------
+class Projectile:
+    def __init__(self, pos, velocity, damage, radius=5, max_distance=250):
+        self.pos = pygame.Vector2(pos)
+        self.start_pos = pygame.Vector2(pos)
+        self.velocity = pygame.Vector2(velocity)
+        self.damage = damage
+        self.radius = radius
+        self.max_distance = max_distance
+        self.is_dead = False
+
+    def update(self, dt, enemies):
+        if self.is_dead:
+            return
+
+        # move
+        self.pos += self.velocity * dt
+
+        # remove projectile if travel to far
+        if self.pos.distance_to(self.start_pos) >= self.max_distance:
+            self.is_dead = True
+            return
+
+        # collision with enemies
+        for enemy in enemies:
+            if enemy.is_dead:
+                continue
+            if enemy.get_rect().collidepoint(self.pos.x, self.pos.y):
+                enemy.take_damage(self.damage)
+                self.is_dead = True
+                break
+
+    def draw(self, surface):
+        if self.is_dead:
+            return
+        pygame.draw.circle(
+            surface, (255, 255, 0), (int(self.pos.x), int(self.pos.y)), self.radius
+        )
 
 
 # -----------------------------
@@ -77,6 +194,12 @@ class Game:
         # game state
         self.is_game_over = False
 
+        # defence
+        self.defences: list[Defence] = []
+        self.init_defence()
+
+        self.projectiles: list[Projectile] = []
+
     # ---------- RECT HELPERS ----------
     def get_spawn_rect(self):
         spawn_width = WIDTH - 100
@@ -98,10 +221,27 @@ class Game:
         y = castle_rect.top + 20
         return pygame.Rect(x, y, button_width, button_height)
 
+    # ---------- DEFENCE ---------
+    def init_defence(self):
+        castle_rect = self.get_castle_rect()
+
+        num_defences = 5
+        margin_x = 120
+        usable_width = WIDTH - 2 * margin_x
+        y = castle_rect.top + 40
+
+        for i in range(num_defences):
+            x = castle_rect.left + margin_x + (i + 0.5) * (usable_width / num_defences)
+            self.defences.append(Defence(x, y))
+
     # ---------- WAVES ----------
     def spawn_wave(self):
 
         if self.is_game_over:
+            return
+
+        if not self.can_spawn_wave():
+            print("Cannot spawn wave: game over or incoming wave")
             return
 
         self.wave_number += 1
@@ -115,6 +255,15 @@ class Game:
             y = spawn_rect.bottom + ENEMY_SIZE / 2
             enemy = Enemy(x, y, speed_base)
             self.enemies.append(enemy)
+
+    def can_spawn_wave(self) -> bool:
+
+        if self.is_game_over:
+            return False
+        if len(self.enemies) > 0:
+            return False
+
+        return True
 
     # ---------- MAIN LOOP ----------
     def run(self):
@@ -135,12 +284,14 @@ class Game:
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
                 if event.key == pygame.K_SPACE:
-                    self.spawn_wave()
+                    if self.can_spawn_wave():
+                        self.spawn_wave()
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_pos = event.pos
                 if self.get_wave_button_rect().collidepoint(mouse_pos):
-                    self.spawn_wave()
+                    if self.can_spawn_wave():
+                        self.spawn_wave()
 
     # ---------- UPDATE ----------
     def update(self, dt):
@@ -164,6 +315,15 @@ class Game:
                 self.castle_hp = 0
                 self.is_game_over = True
 
+            for defence in self.defences:
+                defence.update(dt, self.enemies, self.projectiles)
+
+            for proj in self.projectiles:
+                proj.update(dt, self.enemies)
+
+            self.projectiles = [p for p in self.projectiles if not p.is_dead]
+            self.enemies = [e for e in self.enemies if not e.is_dead]
+
             # later: remove dead enemies
 
     # ---------- DRAW ----------
@@ -178,8 +338,14 @@ class Game:
         self.draw_castle_hp(self.screen, self.font)
         self.draw_wave_button(self.screen, self.font, self.wave_number)
 
+        for defence in self.defences:
+            defence.draw(self.screen)
+
         for enemy in self.enemies:
             enemy.draw(self.screen)
+
+        for projectile in self.projectiles:
+            projectile.draw(self.screen)
 
         if self.is_game_over:
             self.draw_game_overlay(self.screen)
@@ -205,11 +371,20 @@ class Game:
 
     def draw_wave_button(self, screen, font, wave_number):
         rect = self.get_wave_button_rect()
-        pygame.draw.rect(screen, (100, 100, 130), rect)
+
+        if self.can_spawn_wave():
+            bg_color = (100, 100, 130)
+            text_color = (255, 255, 255)
+            label = f"Next wave ({wave_number +1}) - SPACE"
+        else:
+            bg_color = (60, 60, 80)
+            text_color = (180, 180, 180)
+            label = "Wave incoming.."
+
+        pygame.draw.rect(screen, bg_color, rect)
         pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
 
-        label = f"Next wave ({wave_number + 1}) - SPACE"
-        text_surf = font.render(label, True, (255, 255, 255))
+        text_surf = font.render(label, True, text_color)
         text_rect = text_surf.get_rect(center=rect.center)
         screen.blit(text_surf, text_rect)
 
