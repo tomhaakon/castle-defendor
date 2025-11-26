@@ -1,230 +1,223 @@
 import pygame
 
+# -----------------------------
+# CONFIG / CONSTANTS
+# -----------------------------
+WIDTH, HEIGHT = 1280, 720
+FPS = 60
 
-def main():
-    pygame.init()
+BOTTOM_FRACTION = 1 / 4  # bottom quarter is castle
+ENEMY_SIZE = 40
+BASE_ENEMY_SPEED = 120
 
-    screen = pygame.display.set_mode((1280, 720))
-    pygame.display.set_caption("CastleDefend0r")
 
-    clock = pygame.time.Clock()
-    running = True
-    dt = 0
+# -----------------------------
+# ENEMY CLASS
+# -----------------------------
+class Enemy:
+    def __init__(self, x, y, speed):
+        self.pos = pygame.Vector2(x, y)
+        self.speed = speed
+        self.state = "moving"  # "moving" or "attacking"
 
-    slot_labels = ["slot_1", "slot_2", "slot_3", "slot_4", "slot_5"]
+    def get_rect(self):
+        rect = pygame.Rect(0, 0, ENEMY_SIZE, ENEMY_SIZE)
+        rect.center = self.pos
+        return rect
 
-    font = pygame.font.SysFont(None, 24)
+    def update(self, dt, castle_rect):
+        """Update enemy movement and collision with castle."""
+        if self.state == "moving":
+            # move down
+            self.pos.y += self.speed * dt
 
-    # enemy setup
-    enemies = []
-    wave_number = 0
-    enemy_size = 40
-    base_enemy_speed = 120
+            rect = self.get_rect()
+            if rect.colliderect(castle_rect):
+                self.state = "attacking"
+                # snap to top of castle
+                self.pos.y = castle_rect.top - ENEMY_SIZE / 2
 
-    while running:
-        dt = clock.tick(60) / 1000
+    def draw(self, surface):
+        rect = self.get_rect()
+        if self.state == "attacking":
+            color = (50, 200, 50)  # green
+        else:
+            color = (200, 50, 50)  # red
+        pygame.draw.rect(surface, color, rect)
 
-        # 1 handle events
-        keys = pygame.key.get_pressed()
 
+# -----------------------------
+# GAME CLASS
+# -----------------------------
+class Game:
+    def __init__(self):
+        pygame.init()
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("CastleDefend0r")
+
+        self.clock = pygame.time.Clock()
+        self.running = True
+
+        self.font = pygame.font.SysFont(None, 24)
+        self.slot_labels = ["slot_1", "slot_2", "slot_3", "slot_4", "slot_5"]
+
+        # wave / enemies
+        self.enemies: list[Enemy] = []
+        self.wave_number = 0
+
+    # ---------- RECT HELPERS ----------
+    def get_spawn_rect(self):
+        spawn_width = WIDTH - 100
+        spawn_height = 80
+        x = (WIDTH - spawn_width) // 2
+        y = 0
+        return pygame.Rect(x, y, spawn_width, spawn_height)
+
+    def get_castle_rect(self):
+        bottom_height = int(HEIGHT * BOTTOM_FRACTION)
+        top_height = HEIGHT - bottom_height
+        return pygame.Rect(0, top_height, WIDTH, bottom_height)
+
+    def get_wave_button_rect(self):
+        castle_rect = self.get_castle_rect()
+        button_width = 220
+        button_height = 50
+        x = WIDTH - button_width - 20
+        y = castle_rect.top + 20
+        return pygame.Rect(x, y, button_width, button_height)
+
+    # ---------- WAVES ----------
+    def spawn_wave(self):
+        self.wave_number += 1
+        spawn_rect = self.get_spawn_rect()
+
+        num_enemies = 3 + self.wave_number * 2
+        speed_base = BASE_ENEMY_SPEED + self.wave_number * 10
+
+        for i in range(num_enemies):
+            x = spawn_rect.left + (i + 0.5) * (spawn_rect.width / num_enemies)
+            y = spawn_rect.bottom + ENEMY_SIZE / 2
+            enemy = Enemy(x, y, speed_base)
+            self.enemies.append(enemy)
+
+    # ---------- MAIN LOOP ----------
+    def run(self):
+        while self.running:
+            dt = self.clock.tick(FPS) / 1000.0
+            self.handle_events()
+            self.update(dt)
+            self.draw()
+        pygame.quit()
+
+    # ---------- EVENTS ----------
+    def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                self.running = False
 
-            if keys[pygame.K_ESCAPE]:
-                running = False
-            if keys[pygame.K_SPACE]:
-                wave_number += 1
-                spawn_wave(enemies, wave_number, screen, enemy_size, base_enemy_speed)
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.running = False
+                if event.key == pygame.K_SPACE:
+                    self.spawn_wave()
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_pos = event.pos
-                if get_wave_button_rect(screen).collidepoint(mouse_pos):
-                    wave_number += 1
-                    spawn_wave(
-                        enemies, wave_number, screen, enemy_size, base_enemy_speed
-                    )
+                if self.get_wave_button_rect().collidepoint(mouse_pos):
+                    self.spawn_wave()
 
-        # draw
-        draw_background(screen)
-        draw_slots(screen, font, slot_labels)
-        draw_spawn_area(screen)
+    # ---------- UPDATE ----------
+    def update(self, dt):
+        castle_rect = self.get_castle_rect()
 
-        castle_rect = get_castle_rect(screen)
+        for enemy in self.enemies:
+            enemy.update(dt, castle_rect)
 
-        # castle outline
-        pygame.draw.rect(screen, (120, 120, 150), castle_rect, width=1)
+        # later: remove dead enemies, apply castle damage, etc.
 
-        draw_wave_button(screen, font, wave_number)
+    # ---------- DRAW ----------
+    def draw(self):
+        self.draw_background(self.screen)
+        self.draw_spawn_area(self.screen)
+        self.draw_slots(self.screen, self.font, self.slot_labels)
 
-        # update & draw enemies
-        update_and_draw_enemies(screen, enemies, dt, castle_rect, enemy_size)
+        castle_rect = self.get_castle_rect()
+        pygame.draw.rect(self.screen, (120, 120, 150), castle_rect, width=1)
+
+        self.draw_wave_button(self.screen, self.font, self.wave_number)
+
+        for enemy in self.enemies:
+            enemy.draw(self.screen)
 
         pygame.display.flip()
 
-    pygame.quit()
+    # ---------- DRAW HELPERS ----------
+    @staticmethod
+    def draw_background(screen):
+        bottom_height = int(HEIGHT * BOTTOM_FRACTION)
+        top_height = HEIGHT - bottom_height
 
+        pygame.draw.rect(screen, (80, 80, 80), pygame.Rect(0, 0, WIDTH, top_height))
+        pygame.draw.rect(
+            screen,
+            (50, 50, 50),
+            pygame.Rect(0, top_height, WIDTH, bottom_height),
+        )
 
-def spawn_wave(enemies, wave_number, screen, enemy_size, base_speed):
-    spawn_rect = get_spawn_rect(screen)
+    def draw_spawn_area(self, screen):
+        rect = self.get_spawn_rect()
+        pygame.draw.rect(screen, (100, 60, 60), rect)
 
-    num_enemies = 3 + wave_number * 2
-
-    for i in range(num_enemies):
-        # spread enemies evenly across spawn pos
-        x = spawn_rect.left + (i + 0.5) * (spawn_rect.width / num_enemies)
-        y = spawn_rect.bottom + enemy_size / 2
-
-        enemy = {
-            "pos": pygame.Vector2(x, y),
-            "speed": base_speed + wave_number * 10,
-            "state": "moving",
-        }
-        enemies.append(enemy)
-
-
-def update_and_draw_enemies(screen, enemies, dt, castle_rect, enemy_size):
-    for enemy in enemies:
-        pos = enemy["pos"]
-        state = enemy["state"]
-        speed = enemy["speed"]
-
-        enemy_rect = pygame.Rect(0, 0, enemy_size, enemy_size)
-        enemy_rect.center = pos
-
-        if state == "moving":
-            # move down
-            pos.y += speed * dt
-            enemy_rect.center = pos
-
-            # check collision
-            if enemy_rect.colliderect(castle_rect):
-                enemy["state"] = "attacking"
-                # snap to castle
-                pos.y = castle_rect.top - enemy_size / 3
-
-                enemy_rect.center = pos
-
-        # change color
-        if enemy["state"] == "attacking":
-            color = (50, 200, 50)
-        else:
-            color = (200, 50, 50)
-
-        pygame.draw.rect(screen, color, enemy_rect)
-
-
-def get_spawn_rect(screen):
-    WIDTH, HEIGHT = screen.get_size()
-
-    spawn_width = WIDTH - 100
-    spawn_height = 80
-
-    x = (WIDTH - spawn_width) // 2
-    y = 0  # top
-
-    return pygame.Rect(x, y, spawn_width, spawn_height)
-
-
-def draw_spawn_area(screen):
-    rect = get_spawn_rect(screen)
-    pygame.draw.rect(screen, (100, 60, 60), rect)
-    return rect
-
-
-def get_castle_rect(screen):
-    WIDTH, HEIGHT = screen.get_size()
-    bottom_height = HEIGHT // 4
-
-    top_height = HEIGHT - bottom_height
-
-    return pygame.Rect(0, top_height, WIDTH, bottom_height)
-
-
-def get_wave_button_rect(screen):
-    WIDTH, HEIGHT = screen.get_size()
-    bottom_height = HEIGHT // 4
-    top_height = HEIGHT - bottom_height
-
-    button_width = 220
-    button_height = 50
-    x = WIDTH - button_width - 20
-    y = top_height + 20
-
-    return pygame.Rect(x, y, button_width, button_height)
-
-
-def draw_wave_button(screen, font, wave_number):
-    rect = get_wave_button_rect(screen)
-
-    pygame.draw.rect(screen, (100, 100, 130), rect)
-    pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
-
-    label = f"Next wave ({wave_number + 1}) - SPACE"
-    text_surf = font.render(label, True, (255, 255, 255))
-    text_rect = text_surf.get_rect(center=rect.center)
-    screen.blit(text_surf, text_rect)
-
-
-def draw_slots(screen, font, labels):
-
-    width, height = screen.get_size()
-    bottom_height = height // 4
-    top_height = height - bottom_height
-
-    hud_y = top_height
-    hud_height = bottom_height
-
-    num_slots = len(labels)
-
-    # Slot visual settings
-    slot_width = 100
-    slot_height = 100
-    margin_x = 40
-
-    if num_slots > 1:
-        spacing = (width - 2 * margin_x - num_slots * slot_width) // (num_slots - 1)
-
-    else:
-        spacing = 0
-
-    # base y, aprox middle
-    base_y = hud_y + (hud_height - slot_height) // 2
-
-    # offets of slots
-    y_offsets = [30, 15, 0, 15, 30]
-
-    for i, label in enumerate(labels):
-        x = margin_x + i * (slot_width + spacing)
-
-        # apply arch
-        y = base_y + y_offsets[i % len(y_offsets)]
-
-        rect = pygame.Rect(x, y, slot_width, slot_height)
-
-        # fill slot
-        pygame.draw.rect(screen, (120, 120, 120), rect)
-        # outline
+    def draw_wave_button(self, screen, font, wave_number):
+        rect = self.get_wave_button_rect()
+        pygame.draw.rect(screen, (100, 100, 130), rect)
         pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
 
-        # text
-
+        label = f"Next wave ({wave_number + 1}) - SPACE"
         text_surf = font.render(label, True, (255, 255, 255))
         text_rect = text_surf.get_rect(center=rect.center)
         screen.blit(text_surf, text_rect)
 
+    @staticmethod
+    def draw_slots(screen, font, labels):
+        width, height = screen.get_size()
+        bottom_height = int(height * BOTTOM_FRACTION)
+        top_height = height - bottom_height
 
-def draw_background(screen):
-    WIDTH, HEIGHT = screen.get_size()
-    bottom_height = HEIGHT // 4
-    top_height = HEIGHT - bottom_height
+        hud_y = top_height
+        hud_height = bottom_height
 
-    pygame.draw.rect(screen, (80, 80, 80), pygame.Rect(0, 0, WIDTH, top_height))
+        num_slots = len(labels)
 
-    pygame.draw.rect(
-        screen, (50, 50, 50), pygame.Rect(0, top_height, WIDTH, bottom_height)
-    )
+        slot_width = 100
+        slot_height = 100
+        margin_x = 40
+
+        if num_slots > 1:
+            spacing = (width - 2 * margin_x - num_slots * slot_width) // (num_slots - 1)
+        else:
+            spacing = 0
+
+        base_y = hud_y + (hud_height - slot_height) // 2
+        y_offsets = [30, 15, 0, 15, 30]
+
+        for i, label in enumerate(labels):
+            x = margin_x + i * (slot_width + spacing)
+            y = base_y + y_offsets[i % len(y_offsets)]
+
+            rect = pygame.Rect(x, y, slot_width, slot_height)
+
+            pygame.draw.rect(screen, (120, 120, 120), rect)
+            pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
+
+            text_surf = font.render(label, True, (255, 255, 255))
+            text_rect = text_surf.get_rect(center=rect.center)
+            screen.blit(text_surf, text_rect)
 
 
+# -----------------------------
+# ENTRY POINT
+# -----------------------------
 if __name__ == "__main__":
-    main()
+    game = Game()
+    game.run()
