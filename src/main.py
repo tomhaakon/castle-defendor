@@ -11,6 +11,33 @@ ENEMY_SIZE = 40
 BASE_ENEMY_SPEED = 120
 
 
+DEFENCE_STATS = {
+    "archer": {
+        "damage": 8,
+        "range": 300,
+        "cooldown": 0.4,
+        "proj_speed": 450,
+        "color": (255, 255, 0),
+    },
+    "cannon": {
+        "damage": 25,
+        "range": 220,
+        "cooldown": 1.1,
+        "proj_speed": 350,
+        "color": (200, 200, 200),
+    },
+    "mage": {
+        "damage": 12,
+        "range": 280,
+        "cooldown": 0.7,
+        "proj_speed": 400,
+        "color": (150, 80, 255),
+    },
+}
+
+DEFENCE_TYPES = ["archer", "cannon", "mage"]
+
+
 # -----------------------------
 # ENEMY CLASS
 # -----------------------------
@@ -75,11 +102,19 @@ class Enemy:
 
 
 class Defence:
-    def __init__(self, x, y, damage=10, range_pixels=250, attack_cooldown=0.5):
+    def __init__(self, x, y, defence_type="archer"):
         self.pos = pygame.Vector2(x, y)
-        self.damage = damage
-        self.range = range_pixels
-        self.attack_cooldown = attack_cooldown
+        self.defence_type = defence_type
+
+        stats = DEFENCE_STATS[defence_type]
+
+        self.damage = stats["damage"]
+        self.range = stats["range"]
+
+        self.attack_cooldown = stats["cooldown"]
+        self.projectile_speed = stats["proj_speed"]
+        self.projectile_color = stats["color"]
+
         self.time_since_last_shot = 0.0
 
     def update(self, dt, enemies, projectiles):
@@ -107,8 +142,7 @@ class Defence:
             return
 
         direction = direction.normalize()
-        projectile_speed = 400  # px per sec
-        velocity = direction * projectile_speed
+        velocity = direction * self.projectile_speed
 
         projectiles.append(
             Projectile(self.pos, velocity, self.damage, max_distance=self.range)
@@ -125,13 +159,16 @@ class Defence:
 # PROJECTILE  CLASS
 # -----------------------------
 class Projectile:
-    def __init__(self, pos, velocity, damage, radius=5, max_distance=250):
+    def __init__(
+        self, pos, velocity, damage, radius=5, max_distance=250, color=(255, 255, 0)
+    ):
         self.pos = pygame.Vector2(pos)
         self.start_pos = pygame.Vector2(pos)
         self.velocity = pygame.Vector2(velocity)
         self.damage = damage
         self.radius = radius
         self.max_distance = max_distance
+        self.color = color
         self.is_dead = False
 
     def update(self, dt, enemies):
@@ -196,9 +233,12 @@ class Game:
 
         # defence
         self.defences: list[Defence] = []
-        self.init_defence()
-
         self.projectiles: list[Projectile] = []
+
+        self.slot_defences: list[Defence | None] = [None] * len(self.slot_labels)
+        self.selected_slot: int | None = None
+
+        self.init_defence()
 
     # ---------- RECT HELPERS ----------
     def get_spawn_rect(self):
@@ -221,18 +261,94 @@ class Game:
         y = castle_rect.top + 20
         return pygame.Rect(x, y, button_width, button_height)
 
+    # ---------- SLOT GEOMETRY -----
+    def get_slot_rects(self):
+        width, height = self.screen.get_size()
+        bottom_height = int(height * BOTTOM_FRACTION)
+        top_height = height - bottom_height
+
+        hud_y = top_height
+        hud_height = bottom_height
+
+        num_slots = len(self.slot_labels)
+
+        slot_width = 100
+        slot_height = 100
+        margin_x = 40
+
+        if num_slots > 1:
+            spacing = (width - 2 * margin_x - num_slots * slot_width) // (num_slots - 1)
+        else:
+            spacing = 0
+
+        base_y = hud_y + (hud_height - slot_height) // 2
+        y_offsets = [30, 15, 0, 15, 30]
+
+        rects = []
+        for i in range(num_slots):
+            x = margin_x + i * (slot_width + spacing)
+            y = base_y + y_offsets[i % len(y_offsets)]
+            rects.append(pygame.Rect(x, y, slot_width, slot_height))
+
+        return rects
+
+    def get_slot_index_at_pos(self, pos):
+        for i, rect in enumerate(self.get_slot_rects()):
+            if rect.collidepoint(pos):
+                return i
+        return None
+
+    def cycle_slot_defence_type(self, slot_index: int):
+        """Right-click: change the defence type in this slot (archer/cannon/mage)."""
+        defence = self.slot_defences[slot_index]
+
+        # If slot is empty, create a default one (archer)
+        if defence is None:
+            slot_rects = self.get_slot_rects()
+            castle_rect = self.get_castle_rect()
+            rect = slot_rects[slot_index]
+            x = rect.centerx
+            y = castle_rect.top + 40
+            self.slot_defences[slot_index] = Defence(x, y, defence_type="archer")
+        else:
+            # Cycle to next type
+            current_type = defence.defence_type
+            try:
+                idx = DEFENCE_TYPES.index(current_type)
+            except ValueError:
+                idx = 0
+            new_type = DEFENCE_TYPES[(idx + 1) % len(DEFENCE_TYPES)]
+
+            # Rebuild the defence with same position but new type
+            x, y = defence.pos.x, defence.pos.y
+            self.slot_defences[slot_index] = Defence(x, y, defence_type=new_type)
+
+        # Refresh positions + flat list
+        self.update_defence_positions_from_slots()
+
     # ---------- DEFENCE ---------
     def init_defence(self):
+        slot_rects = self.get_slot_rects()
         castle_rect = self.get_castle_rect()
 
-        num_defences = 5
-        margin_x = 120
-        usable_width = WIDTH - 2 * margin_x
-        y = castle_rect.top + 40
+        for i, rect in enumerate(slot_rects):
+            x = rect.centerx
+            y = castle_rect.top + 40
+            defence = Defence(x, y)
+            self.slot_defences[i] = defence
 
-        for i in range(num_defences):
-            x = castle_rect.left + margin_x + (i + 0.5) * (usable_width / num_defences)
-            self.defences.append(Defence(x, y))
+        self.defences = [d for d in self.slot_defences if d is not None]
+
+    def update_defence_positions_from_slots(self):
+        slot_rects = self.get_slot_rects()
+        castle_rect = self.get_castle_rect()
+
+        for i, defence in enumerate(self.slot_defences):
+            if defence is not None:
+                defence.pos.x = slot_rects[i].centerx
+                defence.pos.y = castle_rect.top + 40
+
+        self.defences = [d for d in self.slot_defences if d is not None]
 
     # ---------- WAVES ----------
     def spawn_wave(self):
@@ -287,11 +403,40 @@ class Game:
                     if self.can_spawn_wave():
                         self.spawn_wave()
 
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = event.pos
-                if self.get_wave_button_rect().collidepoint(mouse_pos):
-                    if self.can_spawn_wave():
-                        self.spawn_wave()
+
+                # Right click: change defence type in slot
+                if event.button == 3:
+                    slot_index = self.get_slot_index_at_pos(mouse_pos)
+                    if slot_index is not None:
+                        self.cycle_slot_defence_type(slot_index)
+                    return
+
+                # Left click: wave button or slot select / swap
+                if event.button == 1:
+                    # Wave button click?
+                    if self.get_wave_button_rect().collidepoint(mouse_pos):
+                        if self.can_spawn_wave():
+                            self.spawn_wave()
+                        return
+
+                    # Slot click?
+                    slot_index = self.get_slot_index_at_pos(mouse_pos)
+                    if slot_index is not None:
+                        if self.selected_slot is None:
+                            # select this slot
+                            self.selected_slot = slot_index
+                        else:
+                            # swap defences between slots
+                            a = self.selected_slot
+                            b = slot_index
+                            self.slot_defences[a], self.slot_defences[b] = (
+                                self.slot_defences[b],
+                                self.slot_defences[a],
+                            )
+                            self.selected_slot = None
+                            self.update_defence_positions_from_slots()
 
     # ---------- UPDATE ----------
     def update(self, dt):
@@ -435,41 +580,49 @@ class Game:
 
         screen.blit(small, small_rect)
 
-    @staticmethod
-    def draw_slots(screen, font, labels):
-        width, height = screen.get_size()
-        bottom_height = int(height * BOTTOM_FRACTION)
-        top_height = height - bottom_height
+    def draw_slots(self, screen, font, labels):
+        slot_rects = self.get_slot_rects()
 
-        hud_y = top_height
-        hud_height = bottom_height
+        for i, (label, rect) in enumerate(zip(labels, slot_rects)):
+            defence = self.slot_defences[i]
+            has_defence = defence is not None
 
-        num_slots = len(labels)
+            fill_color = (150, 150, 180) if has_defence else (120, 120, 120)
 
-        slot_width = 100
-        slot_height = 100
-        margin_x = 40
+            if has_defence:
+                fill_color = (140, 140, 170)
 
-        if num_slots > 1:
-            spacing = (width - 2 * margin_x - num_slots * slot_width) // (num_slots - 1)
-        else:
-            spacing = 0
+            if self.selected_slot == i:
+                border_color = (255, 255, 0)
+                border_width = 3
+            else:
+                border_color = (0, 0, 0)
+                border_width = 2
 
-        base_y = hud_y + (hud_height - slot_height) // 2
-        y_offsets = [30, 15, 0, 15, 30]
+            pygame.draw.rect(screen, fill_color, rect)
+            pygame.draw.rect(screen, border_color, rect, width=border_width)
 
-        for i, label in enumerate(labels):
-            x = margin_x + i * (slot_width + spacing)
-            y = base_y + y_offsets[i % len(y_offsets)]
+            label_surf = font.render(label, True, (220, 220, 220))
+            label_rect = label_surf.get_rect(midleft=(rect.left + 8, rect.top + 12))
+            screen.blit(label_surf, label_rect)
 
-            rect = pygame.Rect(x, y, slot_width, slot_height)
+            if has_defence:
+                icon_rect = pygame.Rect(0, 0, 32, 32)
+                icon_rect.center = rect.center
+                pygame.draw.rect(
+                    screen, defence.projectile_color, icon_rect, border_radius=6
+                )
+                pygame.draw.rect(screen, (0, 0, 0), icon_rect, width=1, border_radius=6)
 
-            pygame.draw.rect(screen, (120, 120, 120), rect)
-            pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
+                type_letter = {
+                    "archer": "A",
+                    "cannon": "C",
+                    "mage": "M",
+                }.get(defence.defence_type, "?")
 
-            text_surf = font.render(label, True, (255, 255, 255))
-            text_rect = text_surf.get_rect(center=rect.center)
-            screen.blit(text_surf, text_rect)
+                icon_text = font.render(type_letter, True, (0, 0, 0))
+                icon_text_rect = icon_text.get_rect(center=icon_rect.center)
+                screen.blit(icon_text, icon_text_rect)
 
 
 # -----------------------------
