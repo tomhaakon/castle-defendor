@@ -1,4 +1,5 @@
 import pygame
+import random
 
 # -----------------------------
 # CONFIG / CONSTANTS
@@ -8,7 +9,7 @@ FPS = 60
 
 BOTTOM_FRACTION = 1 / 4  # bottom quarter is castle
 ENEMY_SIZE = 40
-BASE_ENEMY_SPEED = 120
+BASE_ENEMY_SPEED = 40
 
 GOLD_PER_KILL = 10
 GOLD_PER_WAVE_CLEAR = 20
@@ -21,6 +22,8 @@ DEFENCE_STATS = {
         "proj_speed": 450,
         "color": (255, 255, 0),
         "base_cost": 30,
+        "crit_chance": 0.20,
+        "crit_multiplier": 2.0,
     },
     "cannon": {
         "damage": 25,
@@ -29,6 +32,8 @@ DEFENCE_STATS = {
         "proj_speed": 350,
         "color": (200, 200, 200),
         "base_cost": 50,
+        "crit_chance": 0.20,
+        "crit_multiplier": 2.0,
     },
     "mage": {
         "damage": 12,
@@ -37,6 +42,8 @@ DEFENCE_STATS = {
         "proj_speed": 400,
         "color": (150, 80, 255),
         "base_cost": 40,
+        "crit_chance": 0.20,
+        "crit_multiplier": 2.0,
     },
 }
 
@@ -121,6 +128,8 @@ class Defence:
         self.base_projectile_speed = stats["proj_speed"]
         self.projectile_color = stats["color"]
         self.base_cost = stats["base_cost"]
+        self.crit_chance = stats["crit_chance"]
+        self.crit_multiplier = stats["crit_multiplier"]
 
         self.time_since_last_shot = 0.0
 
@@ -171,21 +180,26 @@ class Defence:
         direction = direction.normalize()
         velocity = direction * self.base_projectile_speed
 
+        is_crit = random.random() < self.crit_chance
+        dmg = self.base_damage * (self.crit_multiplier if is_crit else 1.0)
+
         projectiles.append(
             Projectile(
                 self.pos,
                 velocity,
-                self.base_damage,
+                dmg,
                 max_distance=self.base_range,
                 color=self.projectile_color,
+                crit=is_crit,
             )
         )
         self.time_since_last_shot = 0.0
 
     def draw(self, surface):
-        rect = pygame.Rect(0, 0, 30, 30)
-        rect.center = self.pos
-        pygame.draw.rect(surface, (80, 160, 220), rect, border_radius=4)
+        # rect = pygame.Rect(0, 0, 30, 30)
+        # rect.center = self.pos
+        # pygame.draw.rect(surface, (80, 160, 220), rect, border_radius=4)
+        pass
 
 
 # -----------------------------
@@ -193,7 +207,14 @@ class Defence:
 # -----------------------------
 class Projectile:
     def __init__(
-        self, pos, velocity, damage, radius=5, max_distance=250, color=(255, 255, 0)
+        self,
+        pos,
+        velocity,
+        damage,
+        radius=5,
+        max_distance=250,
+        color=(255, 255, 0),
+        crit=False,
     ):
         self.pos = pygame.Vector2(pos)
         self.start_pos = pygame.Vector2(pos)
@@ -203,8 +224,9 @@ class Projectile:
         self.max_distance = max_distance
         self.color = color
         self.is_dead = False
+        self.crit = crit
 
-    def update(self, dt, enemies):
+    def update(self, dt, enemies, damage_numbers):
         if self.is_dead:
             return
 
@@ -222,6 +244,13 @@ class Projectile:
                 continue
             if enemy.get_rect().collidepoint(self.pos.x, self.pos.y):
                 enemy.take_damage(self.damage)
+
+                enemy_rect = enemy.get_rect()
+                color = (255, 255, 0) if self.crit else (255, 80, 80)
+
+                damage_numbers.append(
+                    DamageNumber(enemy_rect.midtop, self.damage, color)
+                )
                 self.is_dead = True
                 break
 
@@ -231,6 +260,37 @@ class Projectile:
         pygame.draw.circle(
             surface, self.color, (int(self.pos.x), int(self.pos.y)), self.radius
         )
+
+
+class DamageNumber:
+    def __init__(self, pos, amount, color=(255, 80, 80)):
+        self.pos = pygame.Vector2(pos)
+        self.amount = amount
+        self.color = color
+        self.lifetime = 1.6
+        self.age = 0.0
+        self.velocity = pygame.Vector2(0, -60)
+        self.alpha = 255
+
+    def update(self, dt):
+        self.age += dt
+        self.pos += self.velocity * dt
+
+        t = self.age / self.lifetime
+
+        self.alpha = max(0, int(255 * (1 - t)))
+
+    def is_dead(self):
+        return self.age >= self.lifetime or self.alpha <= 0
+
+    def draw(self, surface, font):
+        if self.alpha <= 0:
+            return
+
+        text_surf = font.render(str(int(self.amount)), True, self.color)
+        text_surf.set_alpha(self.alpha)
+        rect = text_surf.get_rect(center=(int(self.pos.x), int(self.pos.y)))
+        surface.blit(text_surf, rect)
 
 
 # -----------------------------
@@ -274,6 +334,11 @@ class Game:
         self.init_defence()
 
         self.gold = 200
+        self.damage_numbers: list[DamageNumber] = []
+
+    def draw_damage_numbers(self, screen):
+        for dn in self.damage_numbers:
+            dn.draw(screen, self.font)
 
     def draw_gold(self, screen, font):
         text = f"Gold: {self.gold}"
@@ -381,10 +446,9 @@ class Game:
         # If slot is empty, create a default one (archer)
         if defence is None:
             slot_rects = self.get_slot_rects()
-            castle_rect = self.get_castle_rect()
             rect = slot_rects[slot_index]
             x = rect.centerx
-            y = castle_rect.top + 40
+            y = rect.centery
             self.slot_defences[slot_index] = Defence(x, y, defence_type="archer")
         else:
             # Cycle to next type
@@ -408,30 +472,31 @@ class Game:
     # ---------- DEFENCE ---------
     def init_defence(self):
         slot_rects = self.get_slot_rects()
-        castle_rect = self.get_castle_rect()
 
         for i, rect in enumerate(slot_rects):
             x = rect.centerx
-            y = castle_rect.top + 40
-            defence = Defence(x, y)
+            y = rect.centery
+            defence_type = "archer"
+
+            defence = Defence(x, y, defence_type=defence_type)
             self.slot_defences[i] = defence
 
         self.defences = [d for d in self.slot_defences if d is not None]
 
     def update_defence_positions_from_slots(self):
         slot_rects = self.get_slot_rects()
-        castle_rect = self.get_castle_rect()
 
         for i, defence in enumerate(self.slot_defences):
             if defence is not None:
-                defence.pos.x = slot_rects[i].centerx
-                defence.pos.y = castle_rect.top + 40
+                rect = slot_rects[i]
+
+                defence.pos.x = rect.centerx
+                defence.pos.y = rect.centery
 
         self.defences = [d for d in self.slot_defences if d is not None]
 
     # ---------- WAVES ----------
     def spawn_wave(self):
-
         if self.is_game_over:
             return
 
@@ -442,7 +507,7 @@ class Game:
         self.wave_number += 1
         spawn_rect = self.get_spawn_rect()
 
-        num_enemies = 3 + self.wave_number * 2
+        num_enemies = 1 + self.wave_number * 2
         speed_base = BASE_ENEMY_SPEED + self.wave_number * 10
 
         for i in range(num_enemies):
@@ -452,7 +517,6 @@ class Game:
             self.enemies.append(enemy)
 
     def can_spawn_wave(self) -> bool:
-
         if self.is_game_over:
             return False
         if len(self.enemies) > 0:
@@ -549,7 +613,11 @@ class Game:
             alive_before = sum(1 for e in self.enemies if not e.is_dead)
 
             for proj in self.projectiles:
-                proj.update(dt, self.enemies)
+                proj.update(dt, self.enemies, self.damage_numbers)
+
+            for dn in self.damage_numbers:
+                dn.update(dt)
+            self.damage_numbers = [dn for dn in self.damage_numbers if not dn.is_dead()]
 
             alive_after = sum(1 for e in self.enemies if not e.is_dead)
             killed_this_frame = alive_before - alive_after
@@ -584,6 +652,8 @@ class Game:
 
         for projectile in self.projectiles:
             projectile.draw(self.screen)
+
+        self.draw_damage_numbers(self.screen)
 
         if self.is_game_over:
             self.draw_game_overlay(self.screen)
