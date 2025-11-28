@@ -18,6 +18,7 @@ DEFENCE_STATS = {
         "base_cost": 30,
         "crit_chance": 0.20,
         "crit_multiplier": 2.0,
+        "shop_cost": 40,
     },
     "cannon": {
         "damage": 25,
@@ -28,6 +29,7 @@ DEFENCE_STATS = {
         "base_cost": 50,
         "crit_chance": 0.20,
         "crit_multiplier": 2.0,
+        "shop_cost": 80,
     },
     "mage": {
         "damage": 12,
@@ -38,6 +40,7 @@ DEFENCE_STATS = {
         "base_cost": 40,
         "crit_chance": 0.20,
         "crit_multiplier": 2.0,
+        "shop_cost": 100,
     },
 }
 

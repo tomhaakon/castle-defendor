@@ -1,5 +1,6 @@
 # src/core/game.py
 import pygame
+from pygame.time import wait
 
 from config import (
     WIDTH,
@@ -17,6 +18,14 @@ from entities.enemy import Enemy
 from entities.defence import Defence
 from entities.projectile import Projectile
 from entities.damage_number import DamageNumber
+
+from ui.slots import (
+    compute_slot_rects,
+    get_slot_index_at_pos,
+    draw_slots as draw_slots_ui,
+    build_slot_menu,
+    draw_slot_menu as draw_slot_menu_ui,
+)
 
 
 class Game:
@@ -51,12 +60,155 @@ class Game:
         self.projectiles: list[Projectile] = []
 
         self.slot_defences: list[Defence | None] = [None] * len(self.slot_labels)
+
         self.selected_slot: int | None = None
+        self.swap_source_slot: int | None = None
+
+        self.slot_menu_open: bool = False
+        self.slot_menu_slot: int | None = None
+        self.slot_menu_items: list[tuple[str, pygame.Rect]] = []
 
         self.init_defence()
 
         self.gold = 200
         self.damage_numbers: list[DamageNumber] = []
+
+        self.owned_defences: list[str] = []
+
+        self.choose_defence_menu_open: bool = False
+        self.choose_defence_menu_slot: int | None = None
+
+        self.choose_defence_menu_items: list[tuple[str, pygame.Rect, int]] = []
+
+    def get_shop_button_rects(self) -> dict[str, pygame.Rect]:
+        x = 20
+        y = 20
+        w = 180
+        h = 30
+        padding = 6
+
+        rects: dict[str, pygame.Rect] = {}
+        order = ["archer", "cannon", "mage"]
+
+        for i, dtype in enumerate(order):
+            rects[dtype] = pygame.Rect(x, y + i * (h + padding), w, h)
+
+        return rects
+
+    def try_buy_defence(self, defence_type: str):
+        cost = DEFENCE_STATS[defence_type]["shop_cost"]
+        if self.gold < cost:
+            print("Not enoguh gold")
+            return
+
+        self.gold -= cost
+        self.owned_defences.append(defence_type)
+        print("bought new defence")
+
+    def open_slot_menu(self, slot_index: int):
+        self.slot_menu_open = True
+        self.slot_menu_slot = int(slot_index)
+        self.selected_slot = slot_index
+
+        slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
+        slot_rect = slot_rects[slot_index]
+
+        labels: list[str] = []
+        if self.slot_defences[slot_index] is None:
+            labels.append("Add")
+        else:
+            labels.extend(["Swap", "Upgrade", "Destroy"])
+
+        self.slot_menu_items = build_slot_menu(slot_rect, labels)
+
+    def close_slot_menu(self):
+        self.slot_menu_open = False
+        self.slot_menu_slot = None
+        self.slot_menu_items = []
+
+    #        self.selected_slot = None
+
+    def open_choose_defence_menu(self, slot_index: int):
+        """Popup listing owned_defences to place into this slot."""
+        if not self.owned_defences:
+            print("No owned defences to place.")
+            return
+
+        self.choose_defence_menu_open = True
+        self.choose_defence_menu_slot = slot_index
+        self.choose_defence_menu_items = []
+
+        slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
+        base_rect = slot_rects[slot_index]
+
+        item_width = 140
+        item_height = 24
+        padding = 4
+
+        # place menu to the right of the slot
+        x = base_rect.right + 8
+        y = base_rect.top
+
+        for i, dtype in enumerate(self.owned_defences):
+            label = dtype.capitalize()
+            r = pygame.Rect(x, y + i * (item_height + padding), item_width, item_height)
+            # store index back into owned_defences
+            self.choose_defence_menu_items.append((label, r, i))
+
+    def close_choose_defence_menu(self):
+        self.choose_defence_menu_open = False
+        self.choose_defence_menu_slot = None
+        self.choose_defence_menu_items = []
+
+    def handle_slot_menu_choice(self, slot_index: int, label: str):
+        if label == "Swap":
+            self.swap_source_slot = slot_index
+            self.selected_slot = slot_index
+            self.close_slot_menu()
+            return
+
+        if label == "Upgrade":
+            self.selected_slot = slot_index
+            self.upgrade_selected_slot()
+            self.selected_slot = None
+            self.close_slot_menu()
+            return
+
+        if label == "Destroy":
+            if 0 <= slot_index < len(self.slot_defences):
+                self.slot_defences[slot_index] = None
+                self.update_defence_positions_from_slots()
+
+            if self.selected_slot == slot_index:
+                self.selected_slot = None
+
+            if self.swap_source_slot == slot_index:
+                self.swap_source_slot = None
+            self.close_slot_menu()
+            return
+
+        if label == "Add":
+            self.selected_slot = slot_index
+            self.close_slot_menu()
+            self.open_choose_defence_menu(slot_index)
+            return
+
+    def draw_choose_defence_menu(self, screen):
+        if not self.choose_defence_menu_open:
+            return
+
+        for label, rect, _owned_index in self.choose_defence_menu_items:
+            pygame.draw.rect(screen, (70, 70, 100), rect)
+            pygame.draw.rect(screen, (0, 0, 0), rect, width=1)
+
+            text_surf = self.font.render(label, True, (255, 255, 255))
+            text_rect = text_surf.get_rect(center=rect.center)
+            screen.blit(text_surf, text_rect)
+
+    def draw_slot_menu(self, screen):
+        if not self.slot_menu_open:
+            return
+        draw_slot_menu_ui(screen, self.font, self.slot_menu_items)
 
     def draw_damage_numbers(self, screen):
         for dn in self.damage_numbers:
@@ -78,7 +230,7 @@ class Game:
             else:
                 hint = "No defence in this slot"
         else:
-            hint = "Click slot to select. Right-click to change type. U to upgrade."
+            hint = "Click slot to open menu (Swap / Upgrade / Destroy)."
 
         hint_surf = font.render(hint, True, (230, 230, 230))
         hint_rect = hint_surf.get_rect(topright=(WIDTH - 20, 45))
@@ -125,41 +277,6 @@ class Game:
         return pygame.Rect(x, y, button_width, button_height)
 
     # ---------- SLOT GEOMETRY -----
-    def get_slot_rects(self):
-        width, height = self.screen.get_size()
-        bottom_height = int(height * BOTTOM_FRACTION)
-        top_height = height - bottom_height
-
-        hud_y = top_height
-        hud_height = bottom_height
-
-        num_slots = len(self.slot_labels)
-
-        slot_width = 100
-        slot_height = 100
-        margin_x = 40
-
-        if num_slots > 1:
-            spacing = (width - 2 * margin_x - num_slots * slot_width) // (num_slots - 1)
-        else:
-            spacing = 0
-
-        base_y = hud_y + (hud_height - slot_height) // 2
-        y_offsets = [30, 15, 0, 15, 30]
-
-        rects = []
-        for i in range(num_slots):
-            x = margin_x + i * (slot_width + spacing)
-            y = base_y + y_offsets[i % len(y_offsets)]
-            rects.append(pygame.Rect(x, y, slot_width, slot_height))
-
-        return rects
-
-    def get_slot_index_at_pos(self, pos):
-        for i, rect in enumerate(self.get_slot_rects()):
-            if rect.collidepoint(pos):
-                return i
-        return None
 
     def cycle_slot_defence_type(self, slot_index: int):
         """Right-click: change the defence type in this slot (archer/cannon/mage)."""
@@ -167,7 +284,7 @@ class Game:
 
         # If slot is empty, create a default one (archer)
         if defence is None:
-            slot_rects = self.get_slot_rects()
+            slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
             rect = slot_rects[slot_index]
             x = rect.centerx
             y = rect.centery
@@ -193,7 +310,7 @@ class Game:
 
     # ---------- DEFENCE ---------
     def init_defence(self):
-        slot_rects = self.get_slot_rects()
+        slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
 
         for i, rect in enumerate(slot_rects):
             x = rect.centerx
@@ -206,7 +323,7 @@ class Game:
         self.defences = [d for d in self.slot_defences if d is not None]
 
     def update_defence_positions_from_slots(self):
-        slot_rects = self.get_slot_rects()
+        slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
 
         for i, defence in enumerate(self.slot_defences):
             if defence is not None:
@@ -273,37 +390,118 @@ class Game:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = event.pos
 
-                # Right click: change defence type in slot
-                if event.button == 3:
-                    slot_index = self.get_slot_index_at_pos(mouse_pos)
-                    if slot_index is not None:
-                        self.cycle_slot_defence_type(slot_index)
-                    return
-
-                # Left click: wave button or slot select / swap
                 if event.button == 1:
-                    # Wave button click?
+                    # 1) If choose-defence menu is open, handle it FIRST (modal)
+                    if self.choose_defence_menu_open:
+                        clicked_any = False
+                        for label, rect, owned_index in self.choose_defence_menu_items:
+                            if rect.collidepoint(mouse_pos):
+                                clicked_any = True
+                                if self.choose_defence_menu_slot is not None:
+                                    slot_index = self.choose_defence_menu_slot
+                                    # place new Defence in that slot
+                                    slot_rects = compute_slot_rects(
+                                        self.screen, len(self.slot_labels)
+                                    )
+                                    srect = slot_rects[slot_index]
+
+                                    dtype = self.owned_defences[owned_index]
+                                    new_def = Defence(
+                                        srect.centerx,
+                                        srect.centery,
+                                        defence_type=dtype,
+                                    )
+                                    self.slot_defences[slot_index] = new_def
+                                    self.update_defence_positions_from_slots()
+                                    # remove from owned list
+                                    del self.owned_defences[owned_index]
+
+                                self.close_choose_defence_menu()
+                                self.selected_slot = None
+                                return
+
+                        # clicked outside choose menu -> just close it and stop
+                        self.close_choose_defence_menu()
+                        self.selected_slot = None
+                        return
+
+                    # 2) Shop clicks
+                    shop_rects = self.get_shop_button_rects()
+                    for dtype, rect in shop_rects.items():
+                        if rect.collidepoint(mouse_pos):
+                            self.try_buy_defence(dtype)
+                            return
+
+                    # 3) Wave button
                     if self.get_wave_button_rect().collidepoint(mouse_pos):
                         if self.can_spawn_wave():
                             self.spawn_wave()
+
+                        self.close_slot_menu()
+                        self.swap_source_slot = None
+                        self.selected_slot = None
                         return
 
-                    # Slot click?
-                    slot_index = self.get_slot_index_at_pos(mouse_pos)
-                    if slot_index is not None:
-                        if self.selected_slot is None:
-                            # select this slot
-                            self.selected_slot = slot_index
+                    # 4) Swap target selection
+                    if self.swap_source_slot is not None:
+                        slot_rects = compute_slot_rects(
+                            self.screen, len(self.slot_labels)
+                        )
+                        slot_index = get_slot_index_at_pos(slot_rects, mouse_pos)
+
+                        if slot_index is not None:
+                            if slot_index == self.swap_source_slot:
+                                # clicked same slot => cancel swap
+                                self.swap_source_slot = None
+                                self.selected_slot = None
+                            else:
+                                # perform swap
+                                a = self.swap_source_slot
+                                b = slot_index
+                                self.slot_defences[a], self.slot_defences[b] = (
+                                    self.slot_defences[b],
+                                    self.slot_defences[a],
+                                )
+                                self.swap_source_slot = None
+                                self.selected_slot = None
+
+                            self.close_slot_menu()
+                            return
                         else:
-                            # swap defences between slots
-                            a = self.selected_slot
-                            b = slot_index
-                            self.slot_defences[a], self.slot_defences[b] = (
-                                self.slot_defences[b],
-                                self.slot_defences[a],
-                            )
+                            # clicked somewhere else -> cancel swap + close menu
+                            self.swap_source_slot = None
                             self.selected_slot = None
-                            self.update_defence_positions_from_slots()
+                            self.close_slot_menu()
+                            return
+
+                    # 5) Slot popup menu (Swap / Upgrade / Destroy / Add)
+                    if self.slot_menu_open:
+                        for label, rect in self.slot_menu_items:
+                            if rect.collidepoint(mouse_pos):
+                                if self.slot_menu_slot is not None:
+                                    self.handle_slot_menu_choice(
+                                        self.slot_menu_slot, label
+                                    )
+                                return
+                        # clicked outside menu -> close
+                        self.close_slot_menu()
+                        self.selected_slot = None
+
+                    # 6) Normal slot click (open menu)
+                    slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
+                    slot_index = get_slot_index_at_pos(slot_rects, mouse_pos)
+
+                    if slot_index is not None:
+                        self.open_slot_menu(slot_index)
+                        return
+
+                    # Clicked somewhere else -> reset
+                    self.swap_source_slot = None
+                    self.selected_slot = None
+                    self.close_slot_menu()
+                    return
+
+                # Right click here
 
     # ---------- UPDATE ----------
     def update(self, dt):
@@ -357,6 +555,10 @@ class Game:
     def draw(self):
         self.draw_background(self.screen)
         self.draw_spawn_area(self.screen)
+
+        self.draw_shop(self.screen, self.font)
+        self.draw_owned_defences(self.screen, self.font)
+
         self.draw_slots(self.screen, self.font, self.slot_labels)
 
         castle_rect = self.get_castle_rect()
@@ -377,6 +579,10 @@ class Game:
 
         self.draw_damage_numbers(self.screen)
 
+        self.draw_slot_menu(self.screen)
+
+        self.draw_slot_menu(self.screen)
+        self.draw_choose_defence_menu(self.screen)
         if self.is_game_over:
             self.draw_game_overlay(self.screen)
 
@@ -394,6 +600,37 @@ class Game:
             (50, 50, 50),
             pygame.Rect(0, top_height, WIDTH, bottom_height),
         )
+
+    def draw_shop(self, screen, font):
+        rects = self.get_shop_button_rects()
+        for dtype, rect in rects.items():
+            cost = DEFENCE_STATS[dtype]["shop_cost"]
+            pygame.draw.rect(screen, (60, 60, 90), rect)
+            pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
+
+            label = f"Buy {dtype.capitalize()} ({cost}g)"
+            text_surf = font.render(label, True, (255, 255, 255))
+            text_rect = text_surf.get_rect(center=rect.center)
+            screen.blit(text_surf, text_rect)
+
+    def draw_owned_defences(self, screen, font):
+        x = 20
+        y = 120
+
+        title = "Owned defences:"
+        title_surf = font.render(title, True, (255, 255, 255))
+        screen.blit(title_surf, (x, y))
+        y += 20
+
+        if not self.owned_defences:
+            none_surf = font.render("(none)", True, (170, 170, 170))
+            screen.blit(none_surf, (x, y))
+            return
+
+        for i, dtype in enumerate(self.owned_defences):
+            label = f"{i + 1}. {dtype.capitalize()}"
+            surf = font.render(label, True, (220, 220, 220))
+            screen.blit(surf, (x, y + i * 18))
 
     def draw_spawn_area(self, screen):
         rect = self.get_spawn_rect()
@@ -466,51 +703,12 @@ class Game:
         screen.blit(small, small_rect)
 
     def draw_slots(self, screen, font, labels):
-        slot_rects = self.get_slot_rects()
-
-        for i, (label, rect) in enumerate(zip(labels, slot_rects)):
-            defence = self.slot_defences[i]
-            has_defence = defence is not None
-
-            fill_color = (150, 150, 180) if has_defence else (120, 120, 120)
-
-            if has_defence:
-                fill_color = (140, 140, 170)
-
-            if self.selected_slot == i:
-                border_color = (255, 255, 0)
-                border_width = 3
-            else:
-                border_color = (0, 0, 0)
-                border_width = 2
-
-            pygame.draw.rect(screen, fill_color, rect)
-            pygame.draw.rect(screen, border_color, rect, width=border_width)
-
-            label_surf = font.render(label, True, (220, 220, 220))
-            label_rect = label_surf.get_rect(midleft=(rect.left + 8, rect.top + 12))
-            screen.blit(label_surf, label_rect)
-
-            if has_defence:
-                icon_rect = pygame.Rect(0, 0, 32, 32)
-                icon_rect.center = rect.center
-                pygame.draw.rect(
-                    screen, defence.projectile_color, icon_rect, border_radius=6
-                )
-                pygame.draw.rect(screen, (0, 0, 0), icon_rect, width=1, border_radius=6)
-
-                type_letter = {
-                    "archer": "A",
-                    "cannon": "C",
-                    "mage": "M",
-                }.get(defence.defence_type, "?")
-
-                icon_text = font.render(type_letter, True, (0, 0, 0))
-                icon_text_rect = icon_text.get_rect(center=icon_rect.center)
-                screen.blit(icon_text, icon_text_rect)
-
-                level_text = font.render(f"Lv{defence.level}", True, (255, 255, 255))
-                lvl_rect = level_text.get_rect(
-                    midbottom=(rect.centerx, rect.bottom - 6)
-                )
-                screen.blit(level_text, lvl_rect)
+        slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
+        draw_slots_ui(
+            screen,
+            font,
+            labels,
+            self.slot_defences,
+            self.selected_slot,
+            slot_rects,
+        )
