@@ -262,8 +262,16 @@ class Game:
         button_width = 220
         button_height = 50
         x = WIDTH - button_width - 20
-        y = castle_rect.top + 20
+        y = castle_rect.top - 70
         return pygame.Rect(x, y, button_width, button_height)
+
+    def get_shop_button_rect(self):
+        width = 140
+        height = 45
+        x = WIDTH - 200  # left side of screen
+        y = HEIGHT - height - 120  # bottom-left corner
+
+        return pygame.Rect(x, y, width, height)
 
     # ---------- SLOT GEOMETRY -----
 
@@ -425,6 +433,15 @@ class Game:
                     # If shop popup is open, it has priority for clicks
                     if self.shop_open:
                         self.handle_shop_popup_click(mouse_pos)
+                        return
+
+                    # shop buttton
+                    if self.get_shop_button_rect().collidepoint(mouse_pos):
+                        self.shop_open = True
+                        self.close_slot_menu()
+                        self.close_choose_defence_menu()
+                        self.swap_source_slot = None
+                        self.selected_slot = None
                         return
 
                     # 1) If choose-defence menu is open, handle it FIRST (modal)
@@ -599,20 +616,10 @@ class Game:
         castle_rect = self.get_castle_rect()
         pygame.draw.rect(self.screen, (120, 120, 150), castle_rect, width=1)
 
-        draw_castle_hp(self.screen, self.font, self.castle_hp, self.castle_max_hp, castle_rect)
-        selected_defence = (
-            self.slot_defences[self.selected_slot]
-            if self.selected_slot is not None
-            else None
-        )
-        draw_gold(self.screen, self.font, self.gold, selected_defence)
-        draw_wave_button(
-            self.screen,
-            self.font,
-            self.can_spawn_wave(),
-            self.wave_number,
-            self.get_wave_button_rect(),
-        )
+        self.draw_castle_hp(self.screen, self.font)
+        self.draw_gold(self.screen, self.font)
+        self.draw_wave_button(self.screen, self.font, self.wave_number)
+        self.draw_shop_button(self.screen, self.font)
 
         for defence in self.defences:
             defence.draw(self.screen)
@@ -634,3 +641,108 @@ class Game:
             draw_game_overlay(self.screen, self.font, self.big_font)
 
         pygame.display.flip()
+
+    # ---------- DRAW HELPERS ----------
+    @staticmethod
+    def draw_background(screen):
+        bottom_height = int(HEIGHT * BOTTOM_FRACTION)
+        top_height = HEIGHT - bottom_height
+
+        pygame.draw.rect(screen, (80, 80, 80), pygame.Rect(0, 0, WIDTH, top_height))
+        pygame.draw.rect(
+            screen,
+            (50, 50, 50),
+            pygame.Rect(0, top_height, WIDTH, bottom_height),
+        )
+
+    def draw_shop_button(self, screen, font):
+        rect = self.get_shop_button_rect()
+
+        pygame.draw.rect(screen, (100, 150, 80), rect)  # green-ish
+        pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
+
+        label = "Open Shop (I)"
+        surf = font.render(label, True, (255, 255, 255))
+        text_rect = surf.get_rect(center=rect.center)
+        screen.blit(surf, text_rect)
+
+    def draw_spawn_area(self, screen):
+        rect = self.get_spawn_rect()
+        pygame.draw.rect(screen, (100, 60, 60), rect)
+
+    def draw_wave_button(self, screen, font, wave_number):
+        rect = self.get_wave_button_rect()
+
+        if self.can_spawn_wave():
+            bg_color = (100, 100, 130)
+            text_color = (255, 255, 255)
+            label = f"Ready for next wave! ({wave_number +1})"
+        else:
+            bg_color = (60, 60, 80)
+            text_color = (180, 180, 180)
+            label = "Wave incoming.."
+
+        pygame.draw.rect(screen, bg_color, rect)
+        pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
+
+        text_surf = font.render(label, True, text_color)
+        text_rect = text_surf.get_rect(center=rect.center)
+        screen.blit(text_surf, text_rect)
+
+    def draw_castle_hp(self, screen, font):
+        castle_rect = self.get_castle_rect()
+
+        bar_width = 300
+        bar_height = 20
+        x = 20
+        y = castle_rect.top + 20
+
+        # background
+        outline_rect = pygame.Rect(x, y, bar_width, bar_height)
+        pygame.draw.rect(screen, (0, 0, 0), outline_rect, width=2)
+
+        # fill hp part
+        ratio = 0 if self.castle_max_hp == 0 else self.castle_hp / self.castle_max_hp
+        fill_width = int(bar_width * ratio)
+        fill_rect = pygame.Rect(x + 1, y + 1, max(0, fill_width - 2), bar_height - 2)
+
+        # color
+        r = int(200 * (1 - ratio))
+        g = int(200 * ratio)
+        color = (r, g, 0)
+        pygame.draw.rect(screen, color, fill_rect)
+
+        # text
+        hp_text = f"Castle:HO {int(self.castle_hp)}/{int(self.castle_max_hp)}"
+        text_surf = font.render(hp_text, True, (255, 255, 255))
+        text_rect = text_surf.get_rect(midleft=(x, y - 8))
+        screen.blit(text_surf, text_rect)
+
+    def draw_game_overlay(self, screen):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))  # semi-transparent black
+        screen.blit(overlay, (0, 0))
+
+        # big text
+        text_surf = self.big_font.render("GAME OVER", True, (255, 255, 255))
+        text_rect = text_surf.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 30))
+
+        screen.blit(text_surf, text_rect)
+
+        # small hint
+
+        small = self.font.render("Press ESC to quit", True, (220, 220, 220))
+        small_rect = small.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 20))
+
+        screen.blit(small, small_rect)
+
+    def draw_slots(self, screen, font, labels):
+        slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
+        draw_slots_ui(
+            screen,
+            font,
+            labels,
+            self.slot_defences,
+            self.selected_slot,
+            slot_rects,
+        )
