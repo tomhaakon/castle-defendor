@@ -26,6 +26,16 @@ from ui.slots import (
     build_slot_menu,
     draw_slot_menu as draw_slot_menu_ui,
 )
+from ui.hud import (
+    draw_background,
+    draw_castle_hp,
+    draw_damage_numbers,
+    draw_game_overlay,
+    draw_gold,
+    draw_spawn_area,
+    draw_wave_button,
+)
+from ui.shop import draw_shop_popup, get_shop_popup_layout
 
 
 class Game:
@@ -80,148 +90,6 @@ class Game:
         self.choose_defence_menu_items: list[tuple[str, pygame.Rect, int]] = []
 
         self.shop_open: bool = False
-
-    def get_shop_popup_layout(self):
-        """Return geometry for the shop popup:
-        - popup_rect
-        - shop_item_rects: dict[str, Rect]
-        - owned_item_rects: list[tuple[int, Rect]] (index in owned_defences, rect)
-        - close_rect: Rect for the 'X' button
-        """
-        popup_width = 520
-        popup_height = 320
-        popup_x = (WIDTH - popup_width) // 2
-        popup_y = (HEIGHT - popup_height) // 2
-        popup_rect = pygame.Rect(popup_x, popup_y, popup_width, popup_height)
-
-        # close button in top-right of popup
-        close_size = 24
-        close_rect = pygame.Rect(
-            popup_rect.right - close_size - 8,
-            popup_rect.top + 8,
-            close_size,
-            close_size,
-        )
-
-        # inner padding
-        inner_pad = 16
-        inner_rect = popup_rect.inflate(-2 * inner_pad, -2 * inner_pad)
-
-        # divide inner rect into left/right columns
-        column_gap = 20
-        col_width = (inner_rect.width - column_gap) // 2
-
-        shop_col_rect = pygame.Rect(
-            inner_rect.left,
-            inner_rect.top + 30,
-            col_width,
-            inner_rect.height - 30,
-        )
-
-        owned_col_rect = pygame.Rect(
-            inner_rect.left + col_width + column_gap,
-            inner_rect.top + 30,
-            col_width,
-            inner_rect.height - 30,
-        )
-
-        # --- shop item rects (archer, cannon, mage) ---
-        shop_item_rects: dict[str, pygame.Rect] = {}
-        item_h = 28
-        item_pad = 6
-        shop_types = ["archer", "cannon", "mage"]
-        for i, dtype in enumerate(shop_types):
-            r = pygame.Rect(
-                shop_col_rect.left,
-                shop_col_rect.top + i * (item_h + item_pad),
-                shop_col_rect.width,
-                item_h,
-            )
-            shop_item_rects[dtype] = r
-
-        # --- owned item rects ---
-        owned_item_rects: list[tuple[int, pygame.Rect]] = []
-        for i, _dtype in enumerate(self.owned_defences):
-            r = pygame.Rect(
-                owned_col_rect.left,
-                owned_col_rect.top + i * (item_h + item_pad),
-                owned_col_rect.width,
-                item_h,
-            )
-            owned_item_rects.append((i, r))
-
-        return popup_rect, shop_item_rects, owned_item_rects, close_rect
-
-    def draw_shop_popup(self, screen, font):
-        if not self.shop_open:
-            return
-
-        # darken background
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 160))
-        screen.blit(overlay, (0, 0))
-
-        popup_rect, shop_rects, owned_rects, close_rect = self.get_shop_popup_layout()
-
-        # popup window
-        pygame.draw.rect(screen, (40, 40, 70), popup_rect)
-        pygame.draw.rect(screen, (0, 0, 0), popup_rect, width=2)
-
-        # close button
-        pygame.draw.rect(screen, (100, 60, 60), close_rect)
-        pygame.draw.rect(screen, (0, 0, 0), close_rect, width=1)
-        x_surf = font.render("X", True, (255, 255, 255))
-        x_rect = x_surf.get_rect(center=close_rect.center)
-        screen.blit(x_surf, x_rect)
-
-        # titles
-        inner_pad = 16
-        title_shop = font.render("Shop", True, (255, 255, 255))
-        title_owned = font.render("Owned", True, (255, 255, 255))
-
-        screen.blit(
-            title_shop,
-            (popup_rect.left + inner_pad, popup_rect.top + inner_pad),
-        )
-        screen.blit(
-            title_owned,
-            (
-                popup_rect.centerx + 10,
-                popup_rect.top + inner_pad,
-            ),
-        )
-
-        # shop items
-        for dtype, rect in shop_rects.items():
-            cost = DEFENCE_STATS[dtype]["shop_cost"]
-            pygame.draw.rect(screen, (70, 70, 110), rect)
-            pygame.draw.rect(screen, (0, 0, 0), rect, width=1)
-
-            label = f"Buy {dtype.capitalize()} ({cost}g)"
-            text_surf = font.render(label, True, (255, 255, 255))
-            text_rect = text_surf.get_rect(center=rect.center)
-            screen.blit(text_surf, text_rect)
-
-        # owned items
-        if not self.owned_defences:
-            none_text = font.render("(none)", True, (180, 180, 180))
-            if owned_rects:
-                _, first_rect = owned_rects[0]
-                screen.blit(none_text, (first_rect.left, first_rect.top))
-        else:
-            for idx, rect in owned_rects:
-                dtype, level = self.owned_defences[idx]
-                pygame.draw.rect(screen, (60, 100, 60), rect)
-                pygame.draw.rect(screen, (0, 0, 0), rect, width=1)
-
-                # temporary Defence just to ask for its upgrade cost
-                temp_def = Defence(0, 0, defence_type=dtype, level=level)
-                upg_cost = temp_def.get_upgrade_cost()
-
-                label = f"{dtype.capitalize()} Lv{level}"
-                text_surf = font.render(label, True, (255, 255, 255))
-                text_rect = text_surf.get_rect(center=rect.center)
-                screen.blit(text_surf, text_rect)
 
     def try_buy_defence(self, defence_type: str):
         cost = DEFENCE_STATS[defence_type]["shop_cost"]
@@ -356,32 +224,6 @@ class Game:
         if not self.slot_menu_open:
             return
         draw_slot_menu_ui(screen, self.font, self.slot_menu_items)
-
-    def draw_damage_numbers(self, screen):
-        for dn in self.damage_numbers:
-            dn.draw(screen, self.font)
-
-    def draw_gold(self, screen, font):
-        text = f"Gold: {self.gold}"
-        surf = font.render(text, True, (255, 215, 0))
-        rect = surf.get_rect(topright=(WIDTH - 20, 20))
-        screen.blit(surf, rect)
-
-        if self.selected_slot is not None:
-            defence = self.slot_defences[self.selected_slot]
-            if defence is not None:
-                cost = defence.get_upgrade_cost()
-                hint = (
-                    f"U: Upgrade {defence.defence_type} (Lv{defence.level}) for {cost}g"
-                )
-            else:
-                hint = "No defence in this slot"
-        else:
-            hint = ""
-
-        hint_surf = font.render(hint, True, (230, 230, 230))
-        hint_rect = hint_surf.get_rect(topright=(WIDTH - 20, 45))
-        screen.blit(hint_surf, hint_rect)
 
     def upgrade_selected_slot(self):
         if self.selected_slot is None:
@@ -523,7 +365,9 @@ class Game:
         if not self.shop_open:
             return
 
-        popup_rect, shop_rects, owned_rects, close_rect = self.get_shop_popup_layout()
+        popup_rect, shop_rects, owned_rects, close_rect = get_shop_popup_layout(
+            self.owned_defences
+        )
 
         # close button
         if close_rect.collidepoint(mouse_pos):
@@ -756,10 +600,18 @@ class Game:
 
     # ---------- DRAW ----------
     def draw(self):
-        self.draw_background(self.screen)
-        self.draw_spawn_area(self.screen)
+        draw_background(self.screen)
+        draw_spawn_area(self.screen, self.get_spawn_rect())
 
-        self.draw_slots(self.screen, self.font, self.slot_labels)
+        slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
+        draw_slots_ui(
+            self.screen,
+            self.font,
+            self.slot_labels,
+            self.slot_defences,
+            self.selected_slot,
+            slot_rects,
+        )
 
         castle_rect = self.get_castle_rect()
         pygame.draw.rect(self.screen, (120, 120, 150), castle_rect, width=1)
@@ -778,17 +630,15 @@ class Game:
         for projectile in self.projectiles:
             projectile.draw(self.screen)
 
-        self.draw_damage_numbers(self.screen)
-
-        self.draw_slot_menu(self.screen)
+        draw_damage_numbers(self.screen, self.font, self.damage_numbers)
 
         self.draw_slot_menu(self.screen)
         self.draw_choose_defence_menu(self.screen)
 
-        self.draw_shop_popup(self.screen, self.font)
+        draw_shop_popup(self.screen, self.font, self.shop_open, self.owned_defences)
 
         if self.is_game_over:
-            self.draw_game_overlay(self.screen)
+            draw_game_overlay(self.screen, self.font, self.big_font)
 
         pygame.display.flip()
 
