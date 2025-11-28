@@ -420,8 +420,16 @@ class Game:
         button_width = 220
         button_height = 50
         x = WIDTH - button_width - 20
-        y = castle_rect.top + 20
+        y = castle_rect.top - 70
         return pygame.Rect(x, y, button_width, button_height)
+
+    def get_shop_button_rect(self):
+        width = 140
+        height = 45
+        x = WIDTH - 200  # left side of screen
+        y = HEIGHT - height - 120  # bottom-left corner
+
+        return pygame.Rect(x, y, width, height)
 
     # ---------- SLOT GEOMETRY -----
 
@@ -581,6 +589,15 @@ class Game:
                     # If shop popup is open, it has priority for clicks
                     if self.shop_open:
                         self.handle_shop_popup_click(mouse_pos)
+                        return
+
+                    # shop buttton
+                    if self.get_shop_button_rect().collidepoint(mouse_pos):
+                        self.shop_open = True
+                        self.close_slot_menu()
+                        self.close_choose_defence_menu()
+                        self.swap_source_slot = None
+                        self.selected_slot = None
                         return
 
                     # 1) If choose-defence menu is open, handle it FIRST (modal)
@@ -750,6 +767,7 @@ class Game:
         self.draw_castle_hp(self.screen, self.font)
         self.draw_gold(self.screen, self.font)
         self.draw_wave_button(self.screen, self.font, self.wave_number)
+        self.draw_shop_button(self.screen, self.font)
 
         for defence in self.defences:
             defence.draw(self.screen)
@@ -786,6 +804,17 @@ class Game:
             (50, 50, 50),
             pygame.Rect(0, top_height, WIDTH, bottom_height),
         )
+
+    def draw_shop_button(self, screen, font):
+        rect = self.get_shop_button_rect()
+
+        pygame.draw.rect(screen, (100, 150, 80), rect)  # green-ish
+        pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
+
+        label = "Open Shop (I)"
+        surf = font.render(label, True, (255, 255, 255))
+        text_rect = surf.get_rect(center=rect.center)
+        screen.blit(surf, text_rect)
 
     def draw_spawn_area(self, screen):
         rect = self.get_spawn_rect()
