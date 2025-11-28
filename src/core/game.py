@@ -377,7 +377,7 @@ class Game:
             else:
                 hint = "No defence in this slot"
         else:
-            hint = "Click slot to open menu (Swap / Upgrade / Destroy)."
+            hint = ""
 
         hint_surf = font.render(hint, True, (230, 230, 230))
         hint_rect = hint_surf.get_rect(topright=(WIDTH - 20, 45))
@@ -797,7 +797,7 @@ class Game:
         if self.can_spawn_wave():
             bg_color = (100, 100, 130)
             text_color = (255, 255, 255)
-            label = f"Next wave ({wave_number +1}) - SPACE"
+            label = f"Ready for next wave! ({wave_number +1})"
         else:
             bg_color = (60, 60, 80)
             text_color = (180, 180, 180)
