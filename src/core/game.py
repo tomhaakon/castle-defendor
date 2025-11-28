@@ -73,27 +73,155 @@ class Game:
         self.gold = 200
         self.damage_numbers: list[DamageNumber] = []
 
-        self.owned_defences: list[str] = []
+        self.owned_defences: list[tuple[str, int]] = []
 
         self.choose_defence_menu_open: bool = False
         self.choose_defence_menu_slot: int | None = None
-
         self.choose_defence_menu_items: list[tuple[str, pygame.Rect, int]] = []
 
-    def get_shop_button_rects(self) -> dict[str, pygame.Rect]:
-        x = 20
-        y = 20
-        w = 180
-        h = 30
-        padding = 6
+        self.shop_open: bool = False
 
-        rects: dict[str, pygame.Rect] = {}
-        order = ["archer", "cannon", "mage"]
+    def get_shop_popup_layout(self):
+        """Return geometry for the shop popup:
+        - popup_rect
+        - shop_item_rects: dict[str, Rect]
+        - owned_item_rects: list[tuple[int, Rect]] (index in owned_defences, rect)
+        - close_rect: Rect for the 'X' button
+        """
+        popup_width = 520
+        popup_height = 320
+        popup_x = (WIDTH - popup_width) // 2
+        popup_y = (HEIGHT - popup_height) // 2
+        popup_rect = pygame.Rect(popup_x, popup_y, popup_width, popup_height)
 
-        for i, dtype in enumerate(order):
-            rects[dtype] = pygame.Rect(x, y + i * (h + padding), w, h)
+        # close button in top-right of popup
+        close_size = 24
+        close_rect = pygame.Rect(
+            popup_rect.right - close_size - 8,
+            popup_rect.top + 8,
+            close_size,
+            close_size,
+        )
 
-        return rects
+        # inner padding
+        inner_pad = 16
+        inner_rect = popup_rect.inflate(-2 * inner_pad, -2 * inner_pad)
+
+        # divide inner rect into left/right columns
+        column_gap = 20
+        col_width = (inner_rect.width - column_gap) // 2
+
+        shop_col_rect = pygame.Rect(
+            inner_rect.left,
+            inner_rect.top + 30,
+            col_width,
+            inner_rect.height - 30,
+        )
+
+        owned_col_rect = pygame.Rect(
+            inner_rect.left + col_width + column_gap,
+            inner_rect.top + 30,
+            col_width,
+            inner_rect.height - 30,
+        )
+
+        # --- shop item rects (archer, cannon, mage) ---
+        shop_item_rects: dict[str, pygame.Rect] = {}
+        item_h = 28
+        item_pad = 6
+        shop_types = ["archer", "cannon", "mage"]
+        for i, dtype in enumerate(shop_types):
+            r = pygame.Rect(
+                shop_col_rect.left,
+                shop_col_rect.top + i * (item_h + item_pad),
+                shop_col_rect.width,
+                item_h,
+            )
+            shop_item_rects[dtype] = r
+
+        # --- owned item rects ---
+        owned_item_rects: list[tuple[int, pygame.Rect]] = []
+        for i, _dtype in enumerate(self.owned_defences):
+            r = pygame.Rect(
+                owned_col_rect.left,
+                owned_col_rect.top + i * (item_h + item_pad),
+                owned_col_rect.width,
+                item_h,
+            )
+            owned_item_rects.append((i, r))
+
+        return popup_rect, shop_item_rects, owned_item_rects, close_rect
+
+    def draw_shop_popup(self, screen, font):
+        if not self.shop_open:
+            return
+
+        # darken background
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        screen.blit(overlay, (0, 0))
+
+        popup_rect, shop_rects, owned_rects, close_rect = self.get_shop_popup_layout()
+
+        # popup window
+        pygame.draw.rect(screen, (40, 40, 70), popup_rect)
+        pygame.draw.rect(screen, (0, 0, 0), popup_rect, width=2)
+
+        # close button
+        pygame.draw.rect(screen, (100, 60, 60), close_rect)
+        pygame.draw.rect(screen, (0, 0, 0), close_rect, width=1)
+        x_surf = font.render("X", True, (255, 255, 255))
+        x_rect = x_surf.get_rect(center=close_rect.center)
+        screen.blit(x_surf, x_rect)
+
+        # titles
+        inner_pad = 16
+        title_shop = font.render("Shop", True, (255, 255, 255))
+        title_owned = font.render("Owned", True, (255, 255, 255))
+
+        screen.blit(
+            title_shop,
+            (popup_rect.left + inner_pad, popup_rect.top + inner_pad),
+        )
+        screen.blit(
+            title_owned,
+            (
+                popup_rect.centerx + 10,
+                popup_rect.top + inner_pad,
+            ),
+        )
+
+        # shop items
+        for dtype, rect in shop_rects.items():
+            cost = DEFENCE_STATS[dtype]["shop_cost"]
+            pygame.draw.rect(screen, (70, 70, 110), rect)
+            pygame.draw.rect(screen, (0, 0, 0), rect, width=1)
+
+            label = f"Buy {dtype.capitalize()} ({cost}g)"
+            text_surf = font.render(label, True, (255, 255, 255))
+            text_rect = text_surf.get_rect(center=rect.center)
+            screen.blit(text_surf, text_rect)
+
+        # owned items
+        if not self.owned_defences:
+            none_text = font.render("(none)", True, (180, 180, 180))
+            if owned_rects:
+                _, first_rect = owned_rects[0]
+                screen.blit(none_text, (first_rect.left, first_rect.top))
+        else:
+            for idx, rect in owned_rects:
+                dtype, level = self.owned_defences[idx]
+                pygame.draw.rect(screen, (60, 100, 60), rect)
+                pygame.draw.rect(screen, (0, 0, 0), rect, width=1)
+
+                # temporary Defence just to ask for its upgrade cost
+                temp_def = Defence(0, 0, defence_type=dtype, level=level)
+                upg_cost = temp_def.get_upgrade_cost()
+
+                label = f"{dtype.capitalize()} Lv{level}"
+                text_surf = font.render(label, True, (255, 255, 255))
+                text_rect = text_surf.get_rect(center=rect.center)
+                screen.blit(text_surf, text_rect)
 
     def try_buy_defence(self, defence_type: str):
         cost = DEFENCE_STATS[defence_type]["shop_cost"]
@@ -102,8 +230,8 @@ class Game:
             return
 
         self.gold -= cost
-        self.owned_defences.append(defence_type)
-        print("bought new defence")
+        self.owned_defences.append((defence_type, 1))
+        print("bought new defence", defence_type, "Lv1")
 
     def open_slot_menu(self, slot_index: int):
         self.slot_menu_open = True
@@ -114,10 +242,20 @@ class Game:
         slot_rect = slot_rects[slot_index]
 
         labels: list[str] = []
-        if self.slot_defences[slot_index] is None:
+        defence = self.slot_defences[slot_index]
+
+        if defence is None:
             labels.append("Add")
         else:
-            labels.extend(["Swap", "Upgrade", "Destroy"])
+            # swap always the same
+            labels.append("Swap")
+
+            # upgrade → show price
+            upg_cost = defence.get_upgrade_cost()
+            labels.append(f"Upgrade ({upg_cost}g)")
+
+            # withdraw
+            labels.append("Withdraw")
 
         self.slot_menu_items = build_slot_menu(slot_rect, labels)
 
@@ -149,10 +287,13 @@ class Game:
         x = base_rect.right + 8
         y = base_rect.top
 
-        for i, dtype in enumerate(self.owned_defences):
-            label = dtype.capitalize()
+        for i, (dtype, level) in enumerate(self.owned_defences):
+            # temporary Defence just to ask for its upgrade cost
+            temp_def = Defence(0, 0, defence_type=dtype, level=level)
+            upg_cost = temp_def.get_upgrade_cost()
+
+            label = f"{dtype.capitalize()} Lv{level}"
             r = pygame.Rect(x, y + i * (item_height + padding), item_width, item_height)
-            # store index back into owned_defences
             self.choose_defence_menu_items.append((label, r, i))
 
     def close_choose_defence_menu(self):
@@ -167,23 +308,29 @@ class Game:
             self.close_slot_menu()
             return
 
-        if label == "Upgrade":
+        if label.startswith("Upgrade"):
             self.selected_slot = slot_index
             self.upgrade_selected_slot()
             self.selected_slot = None
             self.close_slot_menu()
             return
 
-        if label == "Destroy":
+        if label == "Withdraw":
             if 0 <= slot_index < len(self.slot_defences):
-                self.slot_defences[slot_index] = None
-                self.update_defence_positions_from_slots()
+                defence = self.slot_defences[slot_index]
+                if defence is not None:
+                    # add its type back to owned list
+                    self.owned_defences.append((defence.defence_type, defence.level))
+                    # remove from slot
+                    self.slot_defences[slot_index] = None
+                    self.update_defence_positions_from_slots()
 
             if self.selected_slot == slot_index:
                 self.selected_slot = None
 
             if self.swap_source_slot == slot_index:
                 self.swap_source_slot = None
+
             self.close_slot_menu()
             return
 
@@ -363,6 +510,37 @@ class Game:
 
         return True
 
+    def handle_shop_popup_click(self, mouse_pos):
+        # if shop isn't open, nothing to do
+        if not self.shop_open:
+            return
+
+        popup_rect, shop_rects, owned_rects, close_rect = self.get_shop_popup_layout()
+
+        # close button
+        if close_rect.collidepoint(mouse_pos):
+            self.shop_open = False
+            return
+
+        # click outside popup -> close
+        if not popup_rect.collidepoint(mouse_pos):
+            self.shop_open = False
+            return
+
+        # shop area
+        for dtype, rect in shop_rects.items():
+            if rect.collidepoint(mouse_pos):
+                self.try_buy_defence(dtype)
+                return
+
+        # owned area (for now just select / do nothing special,
+        # you can extend later)
+        for owned_index, rect in owned_rects:
+            if rect.collidepoint(mouse_pos):
+                dtype, level = self.owned_defences[owned_index]
+                print(f"Clicked owned defence: {dtype} Lv{level}")
+                return
+
     # ---------- MAIN LOOP ----------
     def run(self):
         while self.running:
@@ -386,11 +564,25 @@ class Game:
                         self.spawn_wave()
                 if event.key == pygame.K_u:
                     self.upgrade_selected_slot()
+                # NEW: toggle shop popup
+                if event.key == pygame.K_i:
+                    self.shop_open = not self.shop_open
+                    # when opening shop, close other menus
+                    if self.shop_open:
+                        self.close_slot_menu()
+                        self.close_choose_defence_menu()
+                        self.swap_source_slot = None
+                        self.selected_slot = None
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = event.pos
 
                 if event.button == 1:
+                    # If shop popup is open, it has priority for clicks
+                    if self.shop_open:
+                        self.handle_shop_popup_click(mouse_pos)
+                        return
+
                     # 1) If choose-defence menu is open, handle it FIRST (modal)
                     if self.choose_defence_menu_open:
                         clicked_any = False
@@ -405,11 +597,12 @@ class Game:
                                     )
                                     srect = slot_rects[slot_index]
 
-                                    dtype = self.owned_defences[owned_index]
+                                    dtype, level = self.owned_defences[owned_index]
                                     new_def = Defence(
                                         srect.centerx,
                                         srect.centery,
                                         defence_type=dtype,
+                                        level=level,
                                     )
                                     self.slot_defences[slot_index] = new_def
                                     self.update_defence_positions_from_slots()
@@ -424,13 +617,6 @@ class Game:
                         self.close_choose_defence_menu()
                         self.selected_slot = None
                         return
-
-                    # 2) Shop clicks
-                    shop_rects = self.get_shop_button_rects()
-                    for dtype, rect in shop_rects.items():
-                        if rect.collidepoint(mouse_pos):
-                            self.try_buy_defence(dtype)
-                            return
 
                     # 3) Wave button
                     if self.get_wave_button_rect().collidepoint(mouse_pos):
@@ -556,9 +742,6 @@ class Game:
         self.draw_background(self.screen)
         self.draw_spawn_area(self.screen)
 
-        self.draw_shop(self.screen, self.font)
-        self.draw_owned_defences(self.screen, self.font)
-
         self.draw_slots(self.screen, self.font, self.slot_labels)
 
         castle_rect = self.get_castle_rect()
@@ -583,6 +766,9 @@ class Game:
 
         self.draw_slot_menu(self.screen)
         self.draw_choose_defence_menu(self.screen)
+
+        self.draw_shop_popup(self.screen, self.font)
+
         if self.is_game_over:
             self.draw_game_overlay(self.screen)
 
@@ -600,37 +786,6 @@ class Game:
             (50, 50, 50),
             pygame.Rect(0, top_height, WIDTH, bottom_height),
         )
-
-    def draw_shop(self, screen, font):
-        rects = self.get_shop_button_rects()
-        for dtype, rect in rects.items():
-            cost = DEFENCE_STATS[dtype]["shop_cost"]
-            pygame.draw.rect(screen, (60, 60, 90), rect)
-            pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
-
-            label = f"Buy {dtype.capitalize()} ({cost}g)"
-            text_surf = font.render(label, True, (255, 255, 255))
-            text_rect = text_surf.get_rect(center=rect.center)
-            screen.blit(text_surf, text_rect)
-
-    def draw_owned_defences(self, screen, font):
-        x = 20
-        y = 120
-
-        title = "Owned defences:"
-        title_surf = font.render(title, True, (255, 255, 255))
-        screen.blit(title_surf, (x, y))
-        y += 20
-
-        if not self.owned_defences:
-            none_surf = font.render("(none)", True, (170, 170, 170))
-            screen.blit(none_surf, (x, y))
-            return
-
-        for i, dtype in enumerate(self.owned_defences):
-            label = f"{i + 1}. {dtype.capitalize()}"
-            surf = font.render(label, True, (220, 220, 220))
-            screen.blit(surf, (x, y + i * 18))
 
     def draw_spawn_area(self, screen):
         rect = self.get_spawn_rect()
