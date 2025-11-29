@@ -78,6 +78,17 @@ class Game:
         self.slot_menu_slot: int | None = None
         self.slot_menu_items: list[tuple[str, pygame.Rect]] = []
 
+        self.fields_bg = pygame.image.load("assets/fields.png").convert()
+        self.castle_wall_img = pygame.image.load(
+            "assets/castle_wall_img.png"
+        ).convert_alpha()
+
+        # compute playfield height once
+        castle_rect = self.get_castle_rect()
+        playfield_height = castle_rect.top
+        self.fields_bg_scaled = pygame.transform.smoothscale(
+            self.fields_bg, (WIDTH, playfield_height)
+        )
         self.init_defence()
 
         self.gold = 200
@@ -580,10 +591,20 @@ class Game:
         hp_bar_rect = self.get_hp_bar_rect()
         ui_row_rect = self.get_ui_row_rect()
         castle_rect = self.get_castle_rect()
+        playfield_rect = pygame.Rect(0, 0, WIDTH, castle_rect.top)
 
         # Background that matches these rects
         draw_background(self.screen, castle_rect, ui_row_rect, hp_bar_rect)
 
+        # --- Tile fields.png in the playfield without stretching ---
+        tex = self.fields_bg
+        tw, th = tex.get_width(), tex.get_height()
+
+        for y in range(0, playfield_rect.height, th):
+            for x in range(0, playfield_rect.width, tw):
+                self.screen.blit(tex, (x, y))
+
+        self.screen.blit(self.castle_wall_img, (castle_rect.x, castle_rect.y - 450))
         # Spawn area on top of background
         draw_spawn_area(self.screen, self.get_spawn_rect())
 
@@ -598,7 +619,6 @@ class Game:
             slot_rects,
         )
 
-        castle_rect = self.get_castle_rect()
         pygame.draw.rect(self.screen, (120, 120, 150), castle_rect, width=1)
 
         # --- Castle HP full-width at bottom ---
