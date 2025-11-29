@@ -4,17 +4,32 @@ import pygame
 from config import BOTTOM_FRACTION, HEIGHT, WIDTH
 
 
-def draw_background(screen: pygame.Surface) -> None:
-    """Draw the two-tone background separating the playfield and HUD."""
-    bottom_height = int(HEIGHT * BOTTOM_FRACTION)
-    top_height = HEIGHT - bottom_height
+def draw_background(
+    screen: pygame.Surface,
+    castle_rect: pygame.Rect,
+    ui_row_rect: pygame.Rect,
+    hp_bar_rect: pygame.Rect,
+) -> None:
+    """
+    Draw the background using the same layout as Game:
+    - top area (play field)
+    - castle area
+    - UI row
+    - HP bar row
+    """
 
-    pygame.draw.rect(screen, (80, 80, 80), pygame.Rect(0, 0, WIDTH, top_height))
-    pygame.draw.rect(
-        screen,
-        (50, 50, 50),
-        pygame.Rect(0, top_height, WIDTH, bottom_height),
-    )
+    # Play field = everything above the castle
+    playfield_rect = pygame.Rect(0, 0, WIDTH, castle_rect.top)
+    pygame.draw.rect(screen, (80, 80, 80), playfield_rect)
+
+    # Castle background
+    pygame.draw.rect(screen, (60, 60, 90), castle_rect)
+
+    # UI row background
+    pygame.draw.rect(screen, (40, 40, 40), ui_row_rect)
+
+    # HP bar background
+    pygame.draw.rect(screen, (20, 20, 20), hp_bar_rect)
 
 
 def draw_spawn_area(screen: pygame.Surface, spawn_rect: pygame.Rect) -> None:
@@ -50,28 +65,49 @@ def draw_castle_hp(
     font: pygame.font.Font,
     castle_hp: float,
     castle_max_hp: float,
-    castle_rect: pygame.Rect,
+    bar_rect: pygame.Rect,
 ) -> None:
-    bar_width = 300
-    bar_height = 20
-    x = 20
-    y = castle_rect.top + 20
+    """Draw a full-width HP bar in the bottom row."""
 
-    outline_rect = pygame.Rect(x, y, bar_width, bar_height)
-    pygame.draw.rect(screen, (0, 0, 0), outline_rect, width=2)
+    # background row
+    pygame.draw.rect(screen, (20, 20, 20), bar_rect)
+
+    # inner bar padding
+    inner_padding_x = 0
+    inner_padding_y = 0
+
+    inner_width = bar_rect.width - inner_padding_x * 2
+    inner_height = bar_rect.height - inner_padding_y * 2
 
     ratio = 0 if castle_max_hp == 0 else castle_hp / castle_max_hp
-    fill_width = int(bar_width * ratio)
-    fill_rect = pygame.Rect(x + 1, y + 1, max(0, fill_width - 2), bar_height - 2)
+    fill_width = int(inner_width * ratio)
 
+    # outline
+    outline_rect = pygame.Rect(
+        bar_rect.left,
+        bar_rect.top,
+        inner_width,
+        inner_height,
+    )
+    pygame.draw.rect(screen, (0, 0, 0), outline_rect, width=2)
+
+    # fill
     r = int(200 * (1 - ratio))
     g = int(200 * ratio)
     color = (r, g, 0)
+
+    fill_rect = pygame.Rect(
+        outline_rect.left + 1,
+        outline_rect.top + 1,
+        max(0, fill_width - 2),
+        outline_rect.height - 2,
+    )
     pygame.draw.rect(screen, color, fill_rect)
 
-    hp_text = f"Castle:HO {int(castle_hp)}/{int(castle_max_hp)}"
+    # text centered in the row
+    hp_text = f"Castle HP {int(castle_hp)}/{int(castle_max_hp)}"
     text_surf = font.render(hp_text, True, (255, 255, 255))
-    text_rect = text_surf.get_rect(midleft=(x, y - 8))
+    text_rect = text_surf.get_rect(center=bar_rect.center)
     screen.blit(text_surf, text_rect)
 
 
@@ -80,12 +116,17 @@ def draw_gold(
     font: pygame.font.Font,
     gold: int,
     selected_defence,
+    ui_row_rect: pygame.Rect,
 ) -> None:
+    """Show gold + upgrade hint in the UI row (above HP bar)."""
+
+    # Gold text on the left side of the row
     text = f"Gold: {gold}"
     surf = font.render(text, True, (255, 215, 0))
-    rect = surf.get_rect(topright=(WIDTH - 20, 20))
+    rect = surf.get_rect(midleft=(ui_row_rect.centerx, ui_row_rect.centery))
     screen.blit(surf, rect)
 
+    # Upgrade hint on the right side of the row
     if selected_defence is not None:
         cost = selected_defence.get_upgrade_cost()
         hint = (
@@ -96,7 +137,9 @@ def draw_gold(
         hint = ""
 
     hint_surf = font.render(hint, True, (230, 230, 230))
-    hint_rect = hint_surf.get_rect(topright=(WIDTH - 20, 45))
+    hint_rect = hint_surf.get_rect(
+        midright=(ui_row_rect.right - 20, ui_row_rect.centery)
+    )
     screen.blit(hint_surf, hint_rect)
 
 

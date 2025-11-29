@@ -132,8 +132,6 @@ class Game:
         self.slot_menu_slot = None
         self.slot_menu_items = []
 
-    #        self.selected_slot = None
-
     def open_choose_defence_menu(self, slot_index: int):
         """Popup listing owned_defences to place into this slot."""
         if not self.owned_defences:
@@ -240,9 +238,7 @@ class Game:
 
         self.gold -= cost
         defence.upgrade()
-        print(
-            f"Upgraded {defence.defence_type} to level {defence.level}, spent {cost} gold (remaining {self.gold})"
-        )
+        print()
 
     # ---------- RECT HELPERS ----------
     def get_spawn_rect(self):
@@ -251,27 +247,6 @@ class Game:
         x = (WIDTH - spawn_width) // 2
         y = 0
         return pygame.Rect(x, y, spawn_width, spawn_height)
-
-    def get_castle_rect(self):
-        bottom_height = int(HEIGHT * BOTTOM_FRACTION)
-        top_height = HEIGHT - bottom_height
-        return pygame.Rect(0, top_height, WIDTH, bottom_height)
-
-    def get_wave_button_rect(self):
-        castle_rect = self.get_castle_rect()
-        button_width = 220
-        button_height = 50
-        x = WIDTH - button_width - 20
-        y = castle_rect.top - 70
-        return pygame.Rect(x, y, button_width, button_height)
-
-    def get_shop_button_rect(self):
-        width = 140
-        height = 45
-        x = WIDTH - 200  # left side of screen
-        y = HEIGHT - height - 120  # bottom-left corner
-
-        return pygame.Rect(x, y, width, height)
 
     # ---------- SLOT GEOMETRY -----
 
@@ -600,10 +575,20 @@ class Game:
 
     # ---------- DRAW ----------
     def draw(self):
-        draw_background(self.screen)
+
+        # Layout rects
+        hp_bar_rect = self.get_hp_bar_rect()
+        ui_row_rect = self.get_ui_row_rect()
+        castle_rect = self.get_castle_rect()
+
+        # Background that matches these rects
+        draw_background(self.screen, castle_rect, ui_row_rect, hp_bar_rect)
+
+        # Spawn area on top of background
         draw_spawn_area(self.screen, self.get_spawn_rect())
 
         slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
+
         draw_slots_ui(
             self.screen,
             self.font,
@@ -616,9 +601,31 @@ class Game:
         castle_rect = self.get_castle_rect()
         pygame.draw.rect(self.screen, (120, 120, 150), castle_rect, width=1)
 
-        self.draw_castle_hp(self.screen, self.font)
-        self.draw_gold(self.screen, self.font)
-        self.draw_wave_button(self.screen, self.font, self.wave_number)
+        # --- Castle HP full-width at bottom ---
+        draw_castle_hp(
+            self.screen,
+            self.font,
+            self.castle_hp,
+            self.castle_max_hp,
+            hp_bar_rect,
+        )
+        # --- Next wave button in UI row ---
+        wave_button_rect = self.get_wave_button_rect()
+        draw_wave_button(
+            self.screen,
+            self.font,
+            self.can_spawn_wave(),
+            self.wave_number,
+            wave_button_rect,
+        )
+
+        selected_defence = (
+            self.slot_defences[self.selected_slot]
+            if self.selected_slot is not None
+            else None
+        )
+        draw_gold(self.screen, self.font, self.gold, selected_defence, ui_row_rect)
+
         self.draw_shop_button(self.screen, self.font)
 
         for defence in self.defences:
@@ -643,18 +650,6 @@ class Game:
         pygame.display.flip()
 
     # ---------- DRAW HELPERS ----------
-    @staticmethod
-    def draw_background(screen):
-        bottom_height = int(HEIGHT * BOTTOM_FRACTION)
-        top_height = HEIGHT - bottom_height
-
-        pygame.draw.rect(screen, (80, 80, 80), pygame.Rect(0, 0, WIDTH, top_height))
-        pygame.draw.rect(
-            screen,
-            (50, 50, 50),
-            pygame.Rect(0, top_height, WIDTH, bottom_height),
-        )
-
     def draw_shop_button(self, screen, font):
         rect = self.get_shop_button_rect()
 
@@ -665,58 +660,6 @@ class Game:
         surf = font.render(label, True, (255, 255, 255))
         text_rect = surf.get_rect(center=rect.center)
         screen.blit(surf, text_rect)
-
-    def draw_spawn_area(self, screen):
-        rect = self.get_spawn_rect()
-        pygame.draw.rect(screen, (100, 60, 60), rect)
-
-    def draw_wave_button(self, screen, font, wave_number):
-        rect = self.get_wave_button_rect()
-
-        if self.can_spawn_wave():
-            bg_color = (100, 100, 130)
-            text_color = (255, 255, 255)
-            label = f"Ready for next wave! ({wave_number +1})"
-        else:
-            bg_color = (60, 60, 80)
-            text_color = (180, 180, 180)
-            label = "Wave incoming.."
-
-        pygame.draw.rect(screen, bg_color, rect)
-        pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
-
-        text_surf = font.render(label, True, text_color)
-        text_rect = text_surf.get_rect(center=rect.center)
-        screen.blit(text_surf, text_rect)
-
-    def draw_castle_hp(self, screen, font):
-        castle_rect = self.get_castle_rect()
-
-        bar_width = 300
-        bar_height = 20
-        x = 20
-        y = castle_rect.top + 20
-
-        # background
-        outline_rect = pygame.Rect(x, y, bar_width, bar_height)
-        pygame.draw.rect(screen, (0, 0, 0), outline_rect, width=2)
-
-        # fill hp part
-        ratio = 0 if self.castle_max_hp == 0 else self.castle_hp / self.castle_max_hp
-        fill_width = int(bar_width * ratio)
-        fill_rect = pygame.Rect(x + 1, y + 1, max(0, fill_width - 2), bar_height - 2)
-
-        # color
-        r = int(200 * (1 - ratio))
-        g = int(200 * ratio)
-        color = (r, g, 0)
-        pygame.draw.rect(screen, color, fill_rect)
-
-        # text
-        hp_text = f"Castle:HO {int(self.castle_hp)}/{int(self.castle_max_hp)}"
-        text_surf = font.render(hp_text, True, (255, 255, 255))
-        text_rect = text_surf.get_rect(midleft=(x, y - 8))
-        screen.blit(text_surf, text_rect)
 
     def draw_game_overlay(self, screen):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -746,3 +689,43 @@ class Game:
             self.selected_slot,
             slot_rects,
         )
+
+    # ---------- RECT HELPERS ----------
+    def get_hp_bar_rect(self):
+        """Bottom-most row: full-width castle HP bar."""
+        bar_height = 44
+        return pygame.Rect(0, HEIGHT - bar_height, WIDTH, bar_height)
+
+    def get_ui_row_rect(self):
+        """Row above HP bar: gold, shop button, next wave button."""
+        row_height = 60
+        hp_bar_rect = self.get_hp_bar_rect()
+        y = hp_bar_rect.top - row_height
+        return pygame.Rect(0, y, WIDTH, row_height)
+
+    def get_castle_rect(self):
+        """Castle area sits above the UI rows."""
+        castle_height = 140  # tweak if you want it taller/shorter
+        ui_row_rect = self.get_ui_row_rect()
+        y = ui_row_rect.top - castle_height
+        return pygame.Rect(0, y, WIDTH, castle_height)
+
+    def get_wave_button_rect(self):
+        """Wave button lives in the UI row, on the right."""
+        ui_row = self.get_ui_row_rect()
+        button_width = 220
+        button_height = ui_row.height - 10
+
+        x = ui_row.right - button_width - 20
+        y = ui_row.top + (ui_row.height - button_height) // 2
+        return pygame.Rect(x, y, button_width, button_height)
+
+    def get_shop_button_rect(self):
+        """Shop button lives in the UI row, on the left."""
+        ui_row = self.get_ui_row_rect()
+        width = 140
+        height = ui_row.height - 10
+
+        x = ui_row.left + 20
+        y = ui_row.top + (ui_row.height - height) // 2
+        return pygame.Rect(x, y, width, height)

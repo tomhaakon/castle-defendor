@@ -1,34 +1,41 @@
 # src/ui/slots.py
 import pygame
-from config import BOTTOM_FRACTION
+from config import HEIGHT, WIDTH
 
 
 def compute_slot_rects(screen: pygame.Surface, num_slots: int) -> list[pygame.Rect]:
-    """Return a list of pygame.Rect for each HUD slot."""
-    width, height = screen.get_size()
-    bottom_height = int(height * BOTTOM_FRACTION)
-    top_height = height - bottom_height
+    """
+    Compute a horizontal row of slot rects, centered on X,
+    but placed higher up on the screen (above the castle area).
+    """
+    slot_width = 70
+    slot_height = 70
+    gap = WIDTH / 7
 
-    hud_y = top_height
-    hud_height = bottom_height
+    total_width = num_slots * slot_width + (num_slots - 1) * gap
+    start_x = (WIDTH - total_width) // 2
 
-    slot_width = 100
-    slot_height = 100
-    margin_x = 40
+    # --- vertical placement ---
+    # We know from the new layout in Game:
+    # hp_bar_height = 24
+    # ui_row_height = 40
+    # castle_height = 120
+    hp_bar_height = 24
+    ui_row_height = 40
+    castle_height = 120
+    margin_from_bottom = -50
 
-    if num_slots > 1:
-        spacing = (width - 2 * margin_x - num_slots * slot_width) // (num_slots - 1)
-    else:
-        spacing = 0
+    # castle_rect.top = HEIGHT - (hp + ui + castle)
+    castle_top = HEIGHT - (hp_bar_height + ui_row_height + castle_height)
 
-    base_y = hud_y + (hud_height - slot_height) // 2
-    y_offsets = [30, 15, 0, 15, 30]
+    # place slots ABOVE the castle, with some margin
+    row_y = castle_top - slot_height - margin_from_bottom
 
     rects: list[pygame.Rect] = []
-    for i in range(num_slots):
-        x = margin_x + i * (slot_width + spacing)
-        y = base_y + y_offsets[i % len(y_offsets)]
-        rects.append(pygame.Rect(x, y, slot_width, slot_height))
+    x = start_x
+    for _ in range(num_slots):
+        rects.append(pygame.Rect(x, row_y, slot_width, slot_height))
+        x += slot_width + gap
 
     return rects
 
