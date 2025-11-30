@@ -604,7 +604,12 @@ class Game:
             for x in range(0, playfield_rect.width, tw):
                 self.screen.blit(tex, (x, y))
 
-        self.screen.blit(self.castle_wall_img, (castle_rect.x, castle_rect.y - 450))
+        ttw, tth = self.castle_wall_img.get_width(), self.castle_wall_img.get_height()
+
+        for y in range(castle_rect.y, castle_rect.bottom, tth):
+            for x in range(castle_rect.x, castle_rect.right, ttw):
+                self.screen.blit(self.castle_wall_img, (x, y ))
+
         # Spawn area on top of background
         draw_spawn_area(self.screen, self.get_spawn_rect())
 
