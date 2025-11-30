@@ -7,7 +7,6 @@ from config import BOTTOM_FRACTION, HEIGHT, WIDTH
 def draw_background(
     screen: pygame.Surface,
     castle_rect: pygame.Rect,
-    ui_row_rect: pygame.Rect,
     hp_bar_rect: pygame.Rect,
 ) -> None:
     """
@@ -25,15 +24,8 @@ def draw_background(
     # Castle background
     pygame.draw.rect(screen, (60, 60, 90), castle_rect)
 
-    # UI row background
-    pygame.draw.rect(screen, (40, 40, 40), ui_row_rect)
-
     # HP bar background
     pygame.draw.rect(screen, (20, 20, 20), hp_bar_rect)
-
-
-def draw_spawn_area(screen: pygame.Surface, spawn_rect: pygame.Rect) -> None:
-    pygame.draw.rect(screen, (100, 60, 60), spawn_rect)
 
 
 def draw_wave_button(

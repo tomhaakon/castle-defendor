@@ -2,6 +2,8 @@
 import pygame
 from pygame.time import wait
 
+import ui.action_bar
+
 from config import (
     WIDTH,
     HEIGHT,
@@ -31,9 +33,6 @@ from ui.hud import (
     draw_castle_hp,
     draw_damage_numbers,
     draw_game_overlay,
-    draw_gold,
-    draw_spawn_area,
-    draw_wave_button,
 )
 from ui.shop import draw_shop_popup, get_shop_popup_layout
 
@@ -85,6 +84,7 @@ class Game:
 
         # compute playfield height once
         castle_rect = self.get_castle_rect()
+
         playfield_height = castle_rect.top
         self.fields_bg_scaled = pygame.transform.smoothscale(
             self.fields_bg, (WIDTH, playfield_height)
@@ -101,6 +101,8 @@ class Game:
         self.choose_defence_menu_items: list[tuple[str, pygame.Rect, int]] = []
 
         self.shop_open: bool = False
+
+        self.action_bar = ui.action_bar.ActionBar(self.screen, self.font)
 
     def try_buy_defence(self, defence_type: str):
         cost = DEFENCE_STATS[defence_type]["shop_cost"]
@@ -416,18 +418,26 @@ class Game:
                 mouse_pos = event.pos
 
                 if event.button == 1:
+
+                    clicked_icon = self.action_bar.handle_click(mouse_pos)
+                    if clicked_icon == "shop":
+                        self.shop_open = True
+                        # maybe also close other menus, etc.
+                        return
+
+                    if clicked_icon == "next_wave":
+                        if self.can_spawn_wave():
+                            self.spawn_wave()
+                        return
+
+                    if clicked_icon == "gold":
+                        print(f"Current gold: {self.gold}")
+                        # or later, open some stats/tooltip
+                        return
+
                     # If shop popup is open, it has priority for clicks
                     if self.shop_open:
                         self.handle_shop_popup_click(mouse_pos)
-                        return
-
-                    # shop buttton
-                    if self.get_shop_button_rect().collidepoint(mouse_pos):
-                        self.shop_open = True
-                        self.close_slot_menu()
-                        self.close_choose_defence_menu()
-                        self.swap_source_slot = None
-                        self.selected_slot = None
                         return
 
                     # 1) If choose-defence menu is open, handle it FIRST (modal)
@@ -462,16 +472,6 @@ class Game:
 
                         # clicked outside choose menu -> just close it and stop
                         self.close_choose_defence_menu()
-                        self.selected_slot = None
-                        return
-
-                    # 3) Wave button
-                    if self.get_wave_button_rect().collidepoint(mouse_pos):
-                        if self.can_spawn_wave():
-                            self.spawn_wave()
-
-                        self.close_slot_menu()
-                        self.swap_source_slot = None
                         self.selected_slot = None
                         return
 
@@ -589,12 +589,11 @@ class Game:
 
         # Layout rects
         hp_bar_rect = self.get_hp_bar_rect()
-        ui_row_rect = self.get_ui_row_rect()
         castle_rect = self.get_castle_rect()
         playfield_rect = pygame.Rect(0, 0, WIDTH, castle_rect.top)
 
         # Background that matches these rects
-        draw_background(self.screen, castle_rect, ui_row_rect, hp_bar_rect)
+        draw_background(self.screen, castle_rect, hp_bar_rect)
 
         # --- Tile fields.png in the playfield without stretching ---
         tex = self.fields_bg
@@ -608,10 +607,10 @@ class Game:
 
         for y in range(castle_rect.y, castle_rect.bottom, tth):
             for x in range(castle_rect.x, castle_rect.right, ttw):
-                self.screen.blit(self.castle_wall_img, (x, y ))
+                self.screen.blit(self.castle_wall_img, (x, y))
 
         # Spawn area on top of background
-        draw_spawn_area(self.screen, self.get_spawn_rect())
+        #    draw_spawn_area(self.screen, self.get_spawn_rect())
 
         slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
 
@@ -634,24 +633,12 @@ class Game:
             self.castle_max_hp,
             hp_bar_rect,
         )
-        # --- Next wave button in UI row ---
-        wave_button_rect = self.get_wave_button_rect()
-        draw_wave_button(
-            self.screen,
-            self.font,
-            self.can_spawn_wave(),
-            self.wave_number,
-            wave_button_rect,
-        )
 
         selected_defence = (
             self.slot_defences[self.selected_slot]
             if self.selected_slot is not None
             else None
         )
-        draw_gold(self.screen, self.font, self.gold, selected_defence, ui_row_rect)
-
-        self.draw_shop_button(self.screen, self.font)
 
         for defence in self.defences:
             defence.draw(self.screen)
@@ -672,19 +659,11 @@ class Game:
         if self.is_game_over:
             draw_game_overlay(self.screen, self.font, self.big_font)
 
+        self.action_bar.draw(self.gold)
+
         pygame.display.flip()
 
     # ---------- DRAW HELPERS ----------
-    def draw_shop_button(self, screen, font):
-        rect = self.get_shop_button_rect()
-
-        pygame.draw.rect(screen, (100, 150, 80), rect)  # green-ish
-        pygame.draw.rect(screen, (0, 0, 0), rect, width=2)
-
-        label = "Open Shop (I)"
-        surf = font.render(label, True, (255, 255, 255))
-        text_rect = surf.get_rect(center=rect.center)
-        screen.blit(surf, text_rect)
 
     def draw_game_overlay(self, screen):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -716,41 +695,15 @@ class Game:
         )
 
     # ---------- RECT HELPERS ----------
+    # ---------- RECT HELPERS ----------
     def get_hp_bar_rect(self):
         """Bottom-most row: full-width castle HP bar."""
         bar_height = 44
         return pygame.Rect(0, HEIGHT - bar_height, WIDTH, bar_height)
 
-    def get_ui_row_rect(self):
-        """Row above HP bar: gold, shop button, next wave button."""
-        row_height = 60
-        hp_bar_rect = self.get_hp_bar_rect()
-        y = hp_bar_rect.top - row_height
-        return pygame.Rect(0, y, WIDTH, row_height)
-
     def get_castle_rect(self):
-        """Castle area sits above the UI rows."""
+        """Castle area sits directly above the HP bar."""
         castle_height = 140  # tweak if you want it taller/shorter
-        ui_row_rect = self.get_ui_row_rect()
-        y = ui_row_rect.top - castle_height
+        hp_bar_rect = self.get_hp_bar_rect()
+        y = hp_bar_rect.top - castle_height
         return pygame.Rect(0, y, WIDTH, castle_height)
-
-    def get_wave_button_rect(self):
-        """Wave button lives in the UI row, on the right."""
-        ui_row = self.get_ui_row_rect()
-        button_width = 220
-        button_height = ui_row.height - 10
-
-        x = ui_row.right - button_width - 20
-        y = ui_row.top + (ui_row.height - button_height) // 2
-        return pygame.Rect(x, y, button_width, button_height)
-
-    def get_shop_button_rect(self):
-        """Shop button lives in the UI row, on the left."""
-        ui_row = self.get_ui_row_rect()
-        width = 140
-        height = ui_row.height - 10
-
-        x = ui_row.left + 20
-        y = ui_row.top + (ui_row.height - height) // 2
-        return pygame.Rect(x, y, width, height)
