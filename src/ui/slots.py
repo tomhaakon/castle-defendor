@@ -1,6 +1,24 @@
 # src/ui/slots.py
 import pygame
 from config import HEIGHT, WIDTH
+import random
+
+# --- Defence icons (loaded once) ---
+ICON_SIZE = (100, 100)
+ARCHER_ICON = pygame.image.load("assets/archer_up.png")
+ARCHER_ICON = pygame.transform.scale(ARCHER_ICON, ICON_SIZE)
+
+CANNON_ICON = pygame.image.load("assets/canon_up.png")
+CANNON_ICON = pygame.transform.scale(CANNON_ICON, ICON_SIZE)
+
+MAGE_ICON = pygame.image.load("assets/mage_up.png")
+MAGE_ICON = pygame.transform.scale(MAGE_ICON, ICON_SIZE)
+
+DEFENCE_ICONS = {
+    "archer": ARCHER_ICON,
+    "cannon": CANNON_ICON,
+    "mage": MAGE_ICON,
+}
 
 
 def compute_slot_rects(screen: pygame.Surface, num_slots: int) -> list[pygame.Rect]:
@@ -16,14 +34,9 @@ def compute_slot_rects(screen: pygame.Surface, num_slots: int) -> list[pygame.Re
     start_x = (WIDTH - total_width) // 2
 
     # --- vertical placement ---
-    # We know from the new layout in Game:
-    # hp_bar_height = 24
-    # ui_row_height = 40
-    # castle_height = 120
     hp_bar_height = 24
     ui_row_height = 40
     castle_height = 120
-    margin_from_bottom = 0
 
     # castle_rect.top = HEIGHT - (hp + ui + castle)
     castle_top = HEIGHT - (hp_bar_height + ui_row_height + castle_height)
@@ -62,46 +75,40 @@ def draw_slots(
         defence = slot_defences[i]
         has_defence = defence is not None
 
-        fill_color = (150, 150, 180) if has_defence else (120, 120, 120)
-
-        if has_defence:
-            fill_color = (140, 140, 170)
-
-        if selected_slot == i:
-            border_color = (255, 255, 0)
-            border_width = 3
-        else:
-            border_color = (0, 0, 0)
-            border_width = 2
-
-        pygame.draw.rect(screen, fill_color, rect)
-        pygame.draw.rect(screen, border_color, rect, width=border_width)
-
-        # slot label top-left
         label_surf = font.render(label, True, (220, 220, 220))
-        label_rect = label_surf.get_rect(midleft=(rect.left + 8, rect.top + 12))
+        label_rect = label_surf.get_rect(midleft=(rect.left + 8, rect.top))
         screen.blit(label_surf, label_rect)
 
-        if has_defence:
-            icon_rect = pygame.Rect(0, 0, 32, 32)
-            icon_rect.center = rect.center
-            pygame.draw.rect(
-                screen, defence.projectile_color, icon_rect, border_radius=6
-            )
-            pygame.draw.rect(screen, (0, 0, 0), icon_rect, width=1, border_radius=6)
+        if defence is not None:
+            # try to get a sprite for this defence type
+            icon_surf = DEFENCE_ICONS.get(defence.defence_type)
 
-            type_letter = {
-                "archer": "A",
-                "cannon": "C",
-                "mage": "M",
-            }.get(defence.defence_type, "?")
+            # base icon center
+            cx, cy = rect.center
 
-            icon_text = font.render(type_letter, True, (0, 0, 0))
-            icon_text_rect = icon_text.get_rect(center=icon_rect.center)
-            screen.blit(icon_text, icon_text_rect)
+            # small jitter if this defence recently fired
+            if getattr(defence, "shake_time", 0) > 0:
+                jx = random.randint(-defence.shake_magnitude, defence.shake_magnitude)
+                jy = random.randint(-defence.shake_magnitude, defence.shake_magnitude)
+            else:
+                jx = jy = 0
+
+            if icon_surf is not None:
+                icon_rect = icon_surf.get_rect(center=(cx + jx, cy + jy))
+                screen.blit(icon_surf, icon_rect)
+            else:
+                # fallback: colored box, if no icon defined
+                icon_rect = pygame.Rect(0, 0, 32, 32)
+                icon_rect.center = (cx + jx, cy + jy)
+                pygame.draw.rect(
+                    screen, defence.projectile_color, icon_rect, border_radius=6
+                )
+                pygame.draw.rect(screen, (0, 0, 0), icon_rect, width=1, border_radius=6)
+
+            # level text stays the same
 
             level_text = font.render(f"Lv{defence.level}", True, (255, 255, 255))
-            lvl_rect = level_text.get_rect(midbottom=(rect.centerx, rect.bottom - 6))
+            lvl_rect = level_text.get_rect(midbottom=(rect.centerx, rect.bottom + 25))
             screen.blit(level_text, lvl_rect)
 
 

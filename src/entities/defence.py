@@ -2,7 +2,6 @@ import pygame
 import random
 
 from entities.projectile import Projectile
-
 from config import DEFENCE_STATS
 
 
@@ -31,6 +30,12 @@ class Defence:
 
         self.size = 32
         self.rect = pygame.Rect(0, 0, self.size, self.size)
+        self.rect.center = (int(self.pos.x), int(self.pos.y))
+
+        # --- shake / recoil state (used by UI to shake icon) ---
+        self.shake_time = 0.0
+        self.shake_duration = 0.12  # seconds
+        self.shake_magnitude = 2  # pixels (used in UI)
 
     def take_damage(self, amount: float):
         self.hp = max(0.0, self.hp - amount)
@@ -39,7 +44,6 @@ class Defence:
         return self.hp <= 0
 
     def recalculate_stats(self):
-        # scale based on level
         self.damage = self.base_damage * (1.0 + 0.3 * (self.level - 1))
         self.range = self.base_range * (1.0 + 0.1 * (self.level - 1))
 
@@ -59,17 +63,20 @@ class Defence:
         return int(self.base_cost * self.level)
 
     def update(self, dt, enemies, projectiles):
-        # cd
+        # decay shake timer every frame
+        if self.shake_time > 0:
+            self.shake_time = max(0.0, self.shake_time - dt)
+
+        # cooldown
         self.time_since_last_shot += dt
         if self.time_since_last_shot < self.base_cooldown:
             return
 
-        # find enemy in  range
+        # find enemy in range
         target = None
         for enemy in enemies:
             if enemy.is_dead:
                 continue
-
             if self.pos.distance_to(enemy.pos) <= self.base_range:
                 target = enemy
                 break
@@ -98,26 +105,23 @@ class Defence:
                 max_distance=self.base_range,
                 color=self.projectile_color,
                 crit=is_crit,
-                area_radius=aoe_radius,  # <-- this makes it AoE
+                area_radius=aoe_radius,
             )
         )
+
+        # reset cooldown and start shake
         self.time_since_last_shot = 0.0
+        self.shake_time = self.shake_duration
 
     def draw(self, screen):
-        # pygame.draw.rect(screen, (100, 100, 180), self.rect)  # placeholder
-
-        # --- HP BAR ABOVE DEFENCE ---
+        # just HP bar (no square; icons are drawn in UI slots)
         bar_width = 40
         bar_height = 5
-        offset_y = -18  # how high above the defence
+        offset_y = -55
 
         x = int(self.pos.x - bar_width / 2)
         y = int(self.pos.y + offset_y)
 
-        # background (missing hp)
-        # pygame.draw.rect(screen, (80, 0, 0), (x, y, bar_width, bar_height))
-
-        # foreground (current hp)
         if self.max_hp > 0:
             ratio = max(0.0, self.hp / self.max_hp)
         else:
