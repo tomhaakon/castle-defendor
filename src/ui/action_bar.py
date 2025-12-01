@@ -86,15 +86,29 @@ class ActionBar:
         return None
 
     # ---------- DRAW ----------
-    def draw(self, gold_amount: int):
-        # Draw background container
+    def draw(self, gold, wave_number: int):
+
+        # Draw all icons
         for icon in self.icons:
             rect = icon["rect"]
             img = icon["image"]
             self.screen.blit(img, rect)
 
-            # Special handling for gold: draw the amount underneath
+            # Gold text under gold icon
             if icon["name"] == "gold":
-                text_surf = self.font.render(str(gold_amount), True, (0, 0, 0))
+                text_surf = self.font.render(str(gold), True, (0, 0, 0))
                 text_rect = text_surf.get_rect(midtop=(rect.centerx, rect.bottom + 2))
                 self.screen.blit(text_surf, text_rect)
+
+        # ---- Draw wave label under NEXT WAVE icon ----
+        next_icon = next(i for i in self.icons if i["name"] == "next_wave")
+        next_rect = next_icon["rect"]
+
+        label_text = f"Wave {wave_number}"
+        label_surf = self.font.render(label_text, True, (255, 255, 255))
+
+        label_rect = label_surf.get_rect(
+            center=(next_rect.centerx, next_rect.bottom + 12)
+        )
+
+        self.screen.blit(label_surf, label_rect)

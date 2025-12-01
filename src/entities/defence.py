@@ -26,6 +26,18 @@ class Defence:
 
         self.time_since_last_shot = 0.0
 
+        self.max_hp = stats.get("max_hp", 50)
+        self.hp = self.max_hp
+
+        self.size = 32
+        self.rect = pygame.Rect(0, 0, self.size, self.size)
+
+    def take_damage(self, amount: float):
+        self.hp = max(0.0, self.hp - amount)
+
+    def is_dead(self) -> bool:
+        return self.hp <= 0
+
     def recalculate_stats(self):
         # scale based on level
         self.damage = self.base_damage * (1.0 + 0.3 * (self.level - 1))
@@ -88,8 +100,29 @@ class Defence:
         )
         self.time_since_last_shot = 0.0
 
-    def draw(self, surface):
-        # rect = pygame.Rect(0, 0, 30, 30)
-        # rect.center = self.pos
-        # pygame.draw.rect(surface, (80, 160, 220), rect, border_radius=4)
-        pass
+    def draw(self, screen):
+        # --- your existing drawing (sprite/rect) ---
+        pygame.draw.rect(screen, (100, 100, 180), self.rect)  # placeholder
+
+        # --- HP BAR ABOVE DEFENCE ---
+        bar_width = 40
+        bar_height = 5
+        offset_y = -18  # how high above the defence
+
+        x = int(self.pos.x - bar_width / 2)
+        y = int(self.pos.y + offset_y)
+
+        # background (missing hp)
+        pygame.draw.rect(screen, (80, 0, 0), (x, y, bar_width, bar_height))
+
+        # foreground (current hp)
+        if self.max_hp > 0:
+            ratio = max(0.0, self.hp / self.max_hp)
+        else:
+            ratio = 0.0
+
+        pygame.draw.rect(
+            screen,
+            (0, 220, 0),
+            (x, y, int(bar_width * ratio), bar_height),
+        )

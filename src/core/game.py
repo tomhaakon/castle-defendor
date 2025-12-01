@@ -104,6 +104,19 @@ class Game:
 
         self.action_bar = ui.action_bar.ActionBar(self.screen, self.font)
 
+    def get_nearest_defence(self, enemy) -> Defence | None:
+        living_defences = [d for d in self.defences if not d.is_dead()]
+
+        if not living_defences:
+            return None
+
+        def sqr_dist(d: Defence):
+            dx = enemy.pos.x - d.pos.x
+            dy = enemy.pos.y - d.pos.y
+            return dx * dx + dy * dy
+
+        return min(living_defences, key=sqr_dist)
+
     def try_buy_defence(self, defence_type: str):
         cost = DEFENCE_STATS[defence_type]["shop_cost"]
         if self.gold < cost:
@@ -545,20 +558,58 @@ class Game:
             had_enemies_before = len(self.enemies) > 0
 
             # update enemies and calc dmg
-            damage_this_frame = 0.0
+            damage_to_castle = 0.0
+            damage_per_enemy = self.castle_damage_per_second_per_enemy
+
             for enemy in self.enemies:
-                enemy.update(dt, castle_rect)
+                # ---- 1) Find nearest target among ALL defences + castle ----
+                ex, ey = enemy.pos.x, enemy.pos.y
 
-                if enemy.state == "attacking" and self.castle_hp > 0:
-                    damage_this_frame += self.castle_damage_per_second_per_enemy * dt
+                # start with castle as default target
+                castle_cx, castle_cy = castle_rect.center
+                best_dist_sqr = (ex - castle_cx) ** 2 + (ey - castle_cy) ** 2
+                best_target_kind = "castle"
+                best_target_def = None
+                target_x, target_y = castle_cx, castle_cy
 
-            # apply dmg
-            if damage_this_frame > 0:
-                self.castle_hp = max(0.0, self.castle_hp - damage_this_frame)
+                # check each living defence
+                for d in self.defences:
+                    if d.is_dead():
+                        continue
+                    dx = ex - d.pos.x
+                    dy = ey - d.pos.y
+                    dist_sqr = dx * dx + dy * dy
+                    if dist_sqr < best_dist_sqr:
+                        best_dist_sqr = dist_sqr
+                        best_target_kind = "defence"
+                        best_target_def = d
+                        target_x, target_y = d.pos.x, d.pos.y
+
+                # ---- 2) Move enemy toward the chosen target ----
+                target_rect = pygame.Rect(0, 0, 10, 10)
+                target_rect.center = (target_x, target_y)
+
+                enemy.update(dt, target_rect)
+
+                # ---- 3) Apply damage if the enemy is in attacking state ----
+                if enemy.state == "attacking":
+                    if best_target_kind == "defence" and best_target_def is not None:
+                        best_target_def.take_damage(damage_per_enemy * dt)
+                    elif best_target_kind == "castle" and self.castle_hp > 0:
+                        damage_to_castle += damage_per_enemy * dt
+
+            if damage_to_castle > 0:
+                self.castle_hp = max(0.0, self.castle_hp - damage_to_castle)
 
             if self.castle_hp <= 0:
                 self.castle_hp = 0
                 self.is_game_over = True
+
+            for i, d in enumerate(self.slot_defences):
+                if d is not None and d.is_dead():
+                    self.slot_defences[i] = None
+
+            self.defences = [d for d in self.defences if not d.is_dead()]
 
             for defence in self.defences:
                 defence.update(dt, self.enemies, self.projectiles)
@@ -659,8 +710,8 @@ class Game:
         if self.is_game_over:
             draw_game_overlay(self.screen, self.font, self.big_font)
 
-        self.action_bar.draw(self.gold)
-
+        # show upcoming wave under the button
+        self.action_bar.draw(self.gold, self.wave_number + 1)
         pygame.display.flip()
 
     # ---------- DRAW HELPERS ----------
