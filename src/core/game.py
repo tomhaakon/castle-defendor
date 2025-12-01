@@ -142,15 +142,15 @@ class Game:
         if defence is None:
             labels.append("Add")
         else:
-            # swap always the same
-            labels.append("Swap")
-
             # upgrade → show price
             upg_cost = defence.get_upgrade_cost()
             labels.append(f"Upgrade ({upg_cost}g)")
 
+            # swap always the same
+            labels.append("Change slot")
+
             # withdraw
-            labels.append("Withdraw")
+            labels.append("Remove")
 
         self.slot_menu_items = build_slot_menu(slot_rect, labels)
 
@@ -195,12 +195,6 @@ class Game:
         self.choose_defence_menu_items = []
 
     def handle_slot_menu_choice(self, slot_index: int, label: str):
-        if label == "Swap":
-            self.swap_source_slot = slot_index
-            self.selected_slot = slot_index
-            self.close_slot_menu()
-            return
-
         if label.startswith("Upgrade"):
             self.selected_slot = slot_index
             self.upgrade_selected_slot()
@@ -208,7 +202,13 @@ class Game:
             self.close_slot_menu()
             return
 
-        if label == "Withdraw":
+        if label == "Change slot":
+            self.swap_source_slot = slot_index
+            self.selected_slot = slot_index
+            self.close_slot_menu()
+            return
+
+        if label == "Remove":
             if 0 <= slot_index < len(self.slot_defences):
                 defence = self.slot_defences[slot_index]
                 if defence is not None:

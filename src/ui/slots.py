@@ -73,10 +73,10 @@ def draw_slots(
     """Draw the HUD slots, defence icons and levels."""
     for i, (label, rect) in enumerate(zip(labels, slot_rects)):
         defence = slot_defences[i]
-        has_defence = defence is not None
 
+        # Slot label
         label_surf = font.render(label, True, (220, 220, 220))
-        label_rect = label_surf.get_rect(midleft=(rect.left + 8, rect.top))
+        label_rect = label_surf.get_rect(midleft=(rect.left + 8, rect.top + 85))
         screen.blit(label_surf, label_rect)
 
         if defence is not None:
@@ -105,17 +105,15 @@ def draw_slots(
                 )
                 pygame.draw.rect(screen, (0, 0, 0), icon_rect, width=1, border_radius=6)
 
-            # level text stays the same
-
+            # level text above the defence icon
             level_text = font.render(f"Lv{defence.level}", True, (255, 255, 255))
-            lvl_rect = level_text.get_rect(midbottom=(rect.centerx, rect.bottom + 25))
+            lvl_rect = level_text.get_rect(midbottom=(rect.centerx, rect.bottom - 90))
             screen.blit(level_text, lvl_rect)
 
 
 def build_slot_menu(
     slot_rect: pygame.Rect, labels: list[str]
 ) -> list[tuple[str, pygame.Rect]]:
-    """Given a slot rect and labels, return menu items (label, rect) for a popup."""
     item_width = 140
     item_height = 26
     padding = 4
@@ -127,6 +125,13 @@ def build_slot_menu(
     # if it would go off top of screen, move it below slot instead
     if y < 0:
         y = slot_rect.bottom + 8
+
+    # --- clamp horizontally so it stays on screen, away from action bar edge ---
+    margin = 8
+    if x + item_width > WIDTH - margin:
+        x = WIDTH - item_width - margin
+    if x < margin:
+        x = margin
 
     items: list[tuple[str, pygame.Rect]] = []
     for i, label in enumerate(labels):
