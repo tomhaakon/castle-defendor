@@ -139,4 +139,3 @@ def draw_shop_popup(
             text_surf = font.render(label, True, (255, 255, 255))
             text_rect = text_surf.get_rect(center=rect.center)
             screen.blit(text_surf, text_rect)
-

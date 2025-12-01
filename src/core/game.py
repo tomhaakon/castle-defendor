@@ -237,8 +237,8 @@ class Game:
             return
 
         for label, rect, _owned_index in self.choose_defence_menu_items:
-            pygame.draw.rect(screen, (70, 70, 100), rect)
-            pygame.draw.rect(screen, (0, 0, 0), rect, width=1)
+            # pygame.draw.rect(screen, (70, 70, 100), rect)
+            # pygame.draw.rect(screen, (0, 0, 0), rect, width=1)
 
             text_surf = self.font.render(label, True, (255, 255, 255))
             text_rect = text_surf.get_rect(center=rect.center)
@@ -674,7 +674,7 @@ class Game:
             slot_rects,
         )
 
-        pygame.draw.rect(self.screen, (120, 120, 150), castle_rect, width=1)
+        # pygame.draw.rect(self.screen, (120, 120, 150), castle_rect, width=1)
 
         # --- Castle HP full-width at bottom ---
         draw_castle_hp(
@@ -710,7 +710,7 @@ class Game:
         if self.is_game_over:
             draw_game_overlay(self.screen, self.font, self.big_font)
 
-        # show upcoming wave under the button
+        # show upcoming wave under the button, remove +1 if you wnat to show current wave wave_number
         self.action_bar.draw(self.gold, self.wave_number + 1)
         pygame.display.flip()
 
@@ -745,7 +745,6 @@ class Game:
             slot_rects,
         )
 
-    # ---------- RECT HELPERS ----------
     # ---------- RECT HELPERS ----------
     def get_hp_bar_rect(self):
         """Bottom-most row: full-width castle HP bar."""

@@ -66,13 +66,14 @@ class Enemy:
         x = int(self.pos.x - bar_width / 2)
         y = int(self.pos.y + offset_y)
 
-        pygame.draw.rect(screen, (80, 0, 0), (x, y, bar_width, bar_height))
+        # pygame.draw.rect(screen, (80, 0, 0), (x, y, bar_width, bar_height))
 
         if self.max_hp > 0:
             ratio = max(0.0, self.hp / self.max_hp)
         else:
             ratio = 0.0
 
+        # enemy hp bar
         pygame.draw.rect(
             screen,
             (0, 220, 0),

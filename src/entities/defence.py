@@ -102,7 +102,7 @@ class Defence:
 
     def draw(self, screen):
         # --- your existing drawing (sprite/rect) ---
-        pygame.draw.rect(screen, (100, 100, 180), self.rect)  # placeholder
+        # pygame.draw.rect(screen, (100, 100, 180), self.rect)  # placeholder
 
         # --- HP BAR ABOVE DEFENCE ---
         bar_width = 40
@@ -113,7 +113,7 @@ class Defence:
         y = int(self.pos.y + offset_y)
 
         # background (missing hp)
-        pygame.draw.rect(screen, (80, 0, 0), (x, y, bar_width, bar_height))
+        # pygame.draw.rect(screen, (80, 0, 0), (x, y, bar_width, bar_height))
 
         # foreground (current hp)
         if self.max_hp > 0:
