@@ -127,6 +127,7 @@ class Defence:
         else:
             ratio = 0.0
 
+        # HP BAR
         pygame.draw.rect(
             screen,
             (0, 220, 0),

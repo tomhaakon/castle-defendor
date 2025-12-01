@@ -14,6 +14,10 @@ CANNON_ICON = pygame.transform.scale(CANNON_ICON, ICON_SIZE)
 MAGE_ICON = pygame.image.load("assets/mage_up.png")
 MAGE_ICON = pygame.transform.scale(MAGE_ICON, ICON_SIZE)
 
+SLOT_ICON = pygame.image.load("assets/slot_spot.png")
+SLOT_ICON = pygame.transform.scale(SLOT_ICON, ICON_SIZE)
+
+
 DEFENCE_ICONS = {
     "archer": ARCHER_ICON,
     "cannon": CANNON_ICON,
@@ -25,24 +29,23 @@ def compute_slot_rects(screen: pygame.Surface, num_slots: int) -> list[pygame.Re
     """
     Compute a horizontal row of slot rects, centered on X,
     but placed higher up on the screen (above the castle area).
+    These rects are used both for drawing and clicking.
     """
-    slot_width = 70
-    slot_height = 70
-    gap = WIDTH / 7
+    slot_width, slot_height = ICON_SIZE  # ⬅️ match the visual icon size
+    gap = WIDTH / 7  # can tweak if icons get too close
 
     total_width = num_slots * slot_width + (num_slots - 1) * gap
     start_x = (WIDTH - total_width) // 2
 
-    # --- vertical placement ---
     hp_bar_height = 24
     ui_row_height = 40
     castle_height = 120
 
-    # castle_rect.top = HEIGHT - (hp + ui + castle)
     castle_top = HEIGHT - (hp_bar_height + ui_row_height + castle_height)
 
     # place slots ABOVE the castle, with some margin
     row_y = castle_top - 80
+
     rects: list[pygame.Rect] = []
     x = start_x
     for _ in range(num_slots):
@@ -57,7 +60,9 @@ def get_slot_index_at_pos(
 ) -> int | None:
     """Return the index of the first slot rect containing pos, or None."""
     for i, rect in enumerate(slot_rects):
-        if rect.collidepoint(pos):
+        # make the clickable area a bit larger than the visual rect
+        hit_rect = rect.inflate(20, 20)  # +10 px on each side
+        if hit_rect.collidepoint(pos):
             return i
     return None
 
@@ -153,3 +158,12 @@ def draw_slot_menu(
         text_surf = font.render(label, True, (255, 255, 255))
         text_rect = text_surf.get_rect(center=rect.center)
         screen.blit(text_surf, text_rect)
+
+
+def draw_slot_spots(screen: pygame.Surface, slot_rects: list[pygame.Rect]):
+    """Draw only the slot background (slot spot image) for each slot."""
+    ox = 0
+    oy = 35
+    for rect in slot_rects:
+        spot_rect = SLOT_ICON.get_rect(center=(rect.centerx + ox, rect.centery + oy))
+        screen.blit(SLOT_ICON, spot_rect)
