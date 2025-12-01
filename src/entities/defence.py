@@ -88,6 +88,8 @@ class Defence:
         is_crit = random.random() < self.crit_chance
         dmg = self.base_damage * (self.crit_multiplier if is_crit else 1.0)
 
+        aoe_radius = 60 if self.defence_type == "mage" else 0.0
+
         projectiles.append(
             Projectile(
                 self.pos,
@@ -96,6 +98,7 @@ class Defence:
                 max_distance=self.base_range,
                 color=self.projectile_color,
                 crit=is_crit,
+                area_radius=aoe_radius,  # <-- this makes it AoE
             )
         )
         self.time_since_last_shot = 0.0

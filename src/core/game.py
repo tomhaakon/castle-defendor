@@ -3,7 +3,7 @@ import pygame
 from pygame.time import wait
 
 import ui.action_bar
-
+from entities.aoe_effect import AoeEffect
 from config import (
     WIDTH,
     HEIGHT,
@@ -103,6 +103,7 @@ class Game:
         self.shop_open: bool = False
 
         self.action_bar = ui.action_bar.ActionBar(self.screen, self.font)
+        self.aoe_effects: list[AoeEffect] = []
 
     def get_nearest_defence(self, enemy) -> Defence | None:
         living_defences = [d for d in self.defences if not d.is_dead()]
@@ -617,7 +618,7 @@ class Game:
             alive_before = sum(1 for e in self.enemies if not e.is_dead)
 
             for proj in self.projectiles:
-                proj.update(dt, self.enemies, self.damage_numbers)
+                proj.update(dt, self.enemies, self.damage_numbers, self.aoe_effects)
 
             for dn in self.damage_numbers:
                 dn.update(dt)
@@ -630,6 +631,10 @@ class Game:
 
             self.projectiles = [p for p in self.projectiles if not p.is_dead]
             self.enemies = [e for e in self.enemies if not e.is_dead]
+
+            for aoe in self.aoe_effects:
+                aoe.update(dt)
+            self.aoe_effects = [a for a in self.aoe_effects if not a.is_dead()]
 
             if had_enemies_before and len(self.enemies) == 0 and not self.is_game_over:
                 bonus = GOLD_PER_WAVE_CLEAR * max(1, self.wave_number)
@@ -693,6 +698,9 @@ class Game:
 
         for defence in self.defences:
             defence.draw(self.screen)
+
+        for aoe in self.aoe_effects:
+            aoe.draw(self.screen)
 
         for enemy in self.enemies:
             enemy.draw(self.screen)
