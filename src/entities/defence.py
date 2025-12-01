@@ -104,7 +104,6 @@ class Defence:
         self.time_since_last_shot = 0.0
 
     def draw(self, screen):
-        # --- your existing drawing (sprite/rect) ---
         # pygame.draw.rect(screen, (100, 100, 180), self.rect)  # placeholder
 
         # --- HP BAR ABOVE DEFENCE ---

@@ -33,7 +33,6 @@ class AoeEffect:
             (100, 180, 255, alpha),
             (self.radius, self.radius),
             self.radius,
-            width=3,
         )
 
         screen.blit(

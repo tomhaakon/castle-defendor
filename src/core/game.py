@@ -559,44 +559,57 @@ class Game:
             had_enemies_before = len(self.enemies) > 0
 
             # update enemies and calc dmg
+            # update enemies and calc dmg
             damage_to_castle = 0.0
             damage_per_enemy = self.castle_damage_per_second_per_enemy
 
             for enemy in self.enemies:
-                # ---- 1) Find nearest target among ALL defences + castle ----
-                ex, ey = enemy.pos.x, enemy.pos.y
+                # 1) Prefer NEAREST DEFENCE anywhere on the map, if any exist
+                target_def = self.get_nearest_defence(enemy)
 
-                # start with castle as default target
-                castle_cx, castle_cy = castle_rect.center
-                best_dist_sqr = (ex - castle_cx) ** 2 + (ey - castle_cy) ** 2
-                best_target_kind = "castle"
-                best_target_def = None
-                target_x, target_y = castle_cx, castle_cy
+                if target_def is not None:
+                    # build a small rect centered on the defence for Enemy.update
+                    target_rect = pygame.Rect(0, 0, 10, 10)
+                    target_rect.center = (target_def.pos.x, target_def.pos.y)
 
-                # check each living defence
-                for d in self.defences:
-                    if d.is_dead():
-                        continue
-                    dx = ex - d.pos.x
-                    dy = ey - d.pos.y
-                    dist_sqr = dx * dx + dy * dy
-                    if dist_sqr < best_dist_sqr:
-                        best_dist_sqr = dist_sqr
-                        best_target_kind = "defence"
-                        best_target_def = d
-                        target_x, target_y = d.pos.x, d.pos.y
+                    # move enemy toward that defence
+                    enemy.update(dt, target_rect)
 
-                # ---- 2) Move enemy toward the chosen target ----
-                target_rect = pygame.Rect(0, 0, 10, 10)
-                target_rect.center = (target_x, target_y)
+                    # if in attack range, damage that defence
+                    if enemy.state == "attacking":
+                        target_def.take_damage(damage_per_enemy * dt)
 
-                enemy.update(dt, target_rect)
+                else:
+                    # --- no defences left -> target NEAREST POINT on the castle rect ---
+                    ex, ey = enemy.pos.x, enemy.pos.y
 
-                # ---- 3) Apply damage if the enemy is in attacking state ----
-                if enemy.state == "attacking":
-                    if best_target_kind == "defence" and best_target_def is not None:
-                        best_target_def.take_damage(damage_per_enemy * dt)
-                    elif best_target_kind == "castle" and self.castle_hp > 0:
+                    # 1) nearest point on the castle rect
+                    nearest_x = max(castle_rect.left, min(ex, castle_rect.right))
+                    nearest_y = max(castle_rect.top, min(ey, castle_rect.bottom))
+
+                    # 2) move the target *inside* the castle by attack_range,
+                    #    so the enemy ends up right at the wall instead of far away
+                    dx = nearest_x - ex
+                    dy = nearest_y - ey
+                    dist_sq = dx * dx + dy * dy
+
+                    if dist_sq > 0:
+                        dist = dist_sq**0.5
+                        # shift the target deeper by attack_range along the direction to the castle
+                        shift = enemy.attack_range
+                        target_x = nearest_x + (dx / dist) * shift
+                        target_y = nearest_y + (dy / dist) * shift
+                    else:
+                        # enemy is exactly at nearest point already
+                        target_x, target_y = nearest_x, nearest_y
+
+                    # 3) build tiny target rect at that shifted point
+                    target_rect = pygame.Rect(0, 0, 10, 10)
+                    target_rect.center = (target_x, target_y)
+
+                    enemy.update(dt, target_rect)
+
+                    if enemy.state == "attacking" and self.castle_hp > 0:
                         damage_to_castle += damage_per_enemy * dt
 
             if damage_to_castle > 0:
