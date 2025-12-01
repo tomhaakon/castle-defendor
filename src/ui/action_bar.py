@@ -12,7 +12,7 @@ class ActionBar:
         hotbar_container_size = pygame.Vector2(60, 180)
 
         x = WIDTH - hotbar_container_size.x - 20
-        y = HEIGHT - hotbar_container_size.y - 280
+        y = HEIGHT - hotbar_container_size.y - 450
 
         self.hotbar_container = pygame.Rect(
             x, y, hotbar_container_size.x, hotbar_container_size.y

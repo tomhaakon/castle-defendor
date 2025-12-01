@@ -662,30 +662,23 @@ class Game:
         castle_rect = self.get_castle_rect()
         playfield_rect = pygame.Rect(0, 0, WIDTH, castle_rect.top)
 
-        # 1) Background that matches these rects
+        # 1) Background (UI strips, etc.)
         draw_background(self.screen, castle_rect, hp_bar_rect)
 
-        # 2) Grass / fields in the playfield
+        # 2) Grass / fields in the playfield (furthest back)
         tex = self.fields_bg
         tw, th = tex.get_width(), tex.get_height()
-
         for y in range(0, playfield_rect.height, th):
             for x in range(0, playfield_rect.width, tw):
                 self.screen.blit(tex, (x, y))
 
-        # Compute slot rects once (used for spots + icons)
+        # 3) Slot rects (for drawing + hitboxes)
         slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
 
-        # 3) Slot spot image (over grass, under castle / icons / menus)
+        # 4) Slot spots (over grass, behind castle & icons)
         draw_slot_spots(self.screen, slot_rects)
 
-        # 4) Castle wall texture
-        ttw, tth = self.castle_wall_img.get_width(), self.castle_wall_img.get_height()
-        for y in range(castle_rect.y, castle_rect.bottom, tth):
-            for x in range(castle_rect.x, castle_rect.right, ttw):
-                self.screen.blit(self.castle_wall_img, (x, y))
-
-        # 5) Slot icons + labels (over castle + slot spot)
+        # 5) Slot icons / defence icons row (HUD) – draw BEFORE castle so castle can be on top
         draw_slots_ui(
             self.screen,
             self.font,
@@ -695,19 +688,17 @@ class Game:
             slot_rects,
         )
 
-        # 6) Castle HP bar at bottom
-        draw_castle_hp(
-            self.screen,
-            self.font,
-            self.castle_hp,
-            self.castle_max_hp,
-            hp_bar_rect,
-        )
-
-        # 7) Defences, effects, enemies, projectiles
+        # 6) Defences (these are the “towers” that should be behind the wall)
         for defence in self.defences:
             defence.draw(self.screen)
 
+        # 7) Castle wall texture – NOW ON TOP of the defence icons
+        ttw, tth = self.castle_wall_img.get_width(), self.castle_wall_img.get_height()
+        for y in range(castle_rect.y, castle_rect.bottom, tth):
+            for x in range(castle_rect.x, castle_rect.right, ttw):
+                self.screen.blit(self.castle_wall_img, (x, y))
+
+        # 8) Enemies, projectiles, AoE – in front of the wall
         for aoe in self.aoe_effects:
             aoe.draw(self.screen)
 
@@ -717,20 +708,28 @@ class Game:
         for projectile in self.projectiles:
             projectile.draw(self.screen)
 
-        # 8) Damage numbers
+        # 9) Damage numbers
         draw_damage_numbers(self.screen, self.font, self.damage_numbers)
 
-        # 9) Menus / popups on top
+        # 10) Castle HP bar (UI)
+        draw_castle_hp(
+            self.screen,
+            self.font,
+            self.castle_hp,
+            self.castle_max_hp,
+            hp_bar_rect,
+        )
+
+        # 11) Menus & popups on top
         self.draw_slot_menu(self.screen)
         self.draw_choose_defence_menu(self.screen)
-
         draw_shop_popup(self.screen, self.font, self.shop_open, self.owned_defences)
 
-        # 10) Game over overlay, if any
+        # 12) Game over overlay, if any
         if self.is_game_over:
             draw_game_overlay(self.screen, self.font, self.big_font)
 
-        # 11) Action bar (wave number, gold, etc.)
+        # 13) Action bar & wave info
         self.action_bar.draw(self.gold, self.wave_number + 1)
 
         pygame.display.flip()
