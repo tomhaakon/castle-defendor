@@ -29,7 +29,7 @@ def compute_slot_rects(screen: pygame.Surface, num_slots: int) -> list[pygame.Re
     castle_top = HEIGHT - (hp_bar_height + ui_row_height + castle_height)
 
     # place slots ABOVE the castle, with some margin
-    row_y = castle_top - 150
+    row_y = castle_top - 80
     rects: list[pygame.Rect] = []
     x = start_x
     for _ in range(num_slots):

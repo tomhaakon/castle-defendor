@@ -8,7 +8,7 @@ class ActionBar:
         self.font = font  # used for gold amount text
 
         # === Container ===
-        self.hotbar_container_color = (255, 255, 255)
+        self.hotbar_container_color = (255, 255, 0)
         hotbar_container_size = pygame.Vector2(60, 180)
 
         x = WIDTH - hotbar_container_size.x - 20
@@ -88,11 +88,6 @@ class ActionBar:
     # ---------- DRAW ----------
     def draw(self, gold_amount: int):
         # Draw background container
-        pygame.draw.rect(
-            self.screen, self.hotbar_container_color, self.hotbar_container
-        )
-
-        # Draw icons
         for icon in self.icons:
             rect = icon["rect"]
             img = icon["image"]
