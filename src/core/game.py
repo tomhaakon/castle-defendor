@@ -25,8 +25,6 @@ from ui.slots import (
     compute_slot_rects,
     get_slot_index_at_pos,
     draw_slots as draw_slots_ui,
-    build_slot_menu,
-    draw_slot_menu as draw_slot_menu_ui,
     draw_slot_spots,
 )
 from ui.hud import (
@@ -36,6 +34,11 @@ from ui.hud import (
     draw_game_overlay,
 )
 from ui.shop import draw_shop_popup, get_shop_popup_layout
+from ui.defence_popup import (
+    build_defence_popup_layout,
+    draw_defence_popup as draw_defence_popup_ui,
+    calculate_defence_snapshot,
+)
 
 
 class Game:
@@ -72,11 +75,9 @@ class Game:
         self.slot_defences: list[Defence | None] = [None] * len(self.slot_labels)
 
         self.selected_slot: int | None = None
-        self.swap_source_slot: int | None = None
-
-        self.slot_menu_open: bool = False
-        self.slot_menu_slot: int | None = None
-        self.slot_menu_items: list[tuple[str, pygame.Rect]] = []
+        self.defence_popup_open: bool = False
+        self.defence_popup_slot: int | None = None
+        self.defence_popup_layout = None
 
         self.fields_bg = pygame.image.load("assets/fields.png").convert()
         self.castle_wall_img = pygame.image.load(
@@ -129,36 +130,27 @@ class Game:
         self.owned_defences.append((defence_type, 1))
         print("bought new defence", defence_type, "Lv1")
 
-    def open_slot_menu(self, slot_index: int):
-        self.slot_menu_open = True
-        self.slot_menu_slot = int(slot_index)
-        self.selected_slot = slot_index
-
-        slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
-        slot_rect = slot_rects[slot_index]
-
-        labels: list[str] = []
+    def open_defence_popup(self, slot_index: int):
+        """Modal popup with defence portrait, actions and stats."""
+        self.close_choose_defence_menu()
         defence = self.slot_defences[slot_index]
 
         if defence is None:
-            labels.append("Add")
-        else:
-            # upgrade → show price
-            upg_cost = defence.get_upgrade_cost()
-            labels.append(f"Upgrade ({upg_cost}g)")
+            self.defence_popup_open = False
+            self.defence_popup_slot = None
+            self.defence_popup_layout = None
+            self.open_choose_defence_menu(slot_index)
+            return
 
-            # swap always the same
-            labels.append("Change slot")
+        self.defence_popup_open = True
+        self.defence_popup_slot = int(slot_index)
+        self.selected_slot = slot_index
+        self.defence_popup_layout = build_defence_popup_layout(defence)
 
-            # withdraw
-            labels.append("Remove")
-
-        self.slot_menu_items = build_slot_menu(slot_rect, labels)
-
-    def close_slot_menu(self):
-        self.slot_menu_open = False
-        self.slot_menu_slot = None
-        self.slot_menu_items = []
+    def close_defence_popup(self):
+        self.defence_popup_open = False
+        self.defence_popup_slot = None
+        self.defence_popup_layout = None
 
     def open_choose_defence_menu(self, slot_index: int):
         """Popup listing owned_defences to place into this slot."""
@@ -195,43 +187,40 @@ class Game:
         self.choose_defence_menu_slot = None
         self.choose_defence_menu_items = []
 
-    def handle_slot_menu_choice(self, slot_index: int, label: str):
-        if label.startswith("Upgrade"):
+    def handle_defence_popup_action(self, action: str):
+        if self.defence_popup_slot is None:
+            return
+
+        slot_index = self.defence_popup_slot
+        defence = self.slot_defences[slot_index]
+
+        if defence is None:
+            self.close_defence_popup()
+            return
+
+        if action == "upgrade":
             self.selected_slot = slot_index
             self.upgrade_selected_slot()
             self.selected_slot = None
-            self.close_slot_menu()
+            self.defence_popup_layout = build_defence_popup_layout(defence)
             return
 
-        if label == "Change slot":
-            self.swap_source_slot = slot_index
-            self.selected_slot = slot_index
-            self.close_slot_menu()
+        if action == "remove":
+            self.owned_defences.append((defence.defence_type, defence.level))
+            self.slot_defences[slot_index] = None
+            self.update_defence_positions_from_slots()
+            self.close_defence_popup()
+            self.selected_slot = None
             return
 
-        if label == "Remove":
-            if 0 <= slot_index < len(self.slot_defences):
-                defence = self.slot_defences[slot_index]
-                if defence is not None:
-                    # add its type back to owned list
-                    self.owned_defences.append((defence.defence_type, defence.level))
-                    # remove from slot
-                    self.slot_defences[slot_index] = None
-                    self.update_defence_positions_from_slots()
-
-            if self.selected_slot == slot_index:
-                self.selected_slot = None
-
-            if self.swap_source_slot == slot_index:
-                self.swap_source_slot = None
-
-            self.close_slot_menu()
-            return
-
-        if label == "Add":
-            self.selected_slot = slot_index
-            self.close_slot_menu()
-            self.open_choose_defence_menu(slot_index)
+        if action == "sell":
+            snapshot = calculate_defence_snapshot(defence)
+            refund = snapshot["sell_value"]
+            self.gold += refund
+            self.slot_defences[slot_index] = None
+            self.update_defence_positions_from_slots()
+            self.close_defence_popup()
+            self.selected_slot = None
             return
 
     def draw_choose_defence_menu(self, screen):
@@ -239,18 +228,21 @@ class Game:
             return
 
         for label, rect, _owned_index in self.choose_defence_menu_items:
-            # pygame.draw.rect(screen, (70, 70, 100), rect)
-            # pygame.draw.rect(screen, (0, 0, 0), rect, width=1)
-
             text_surf = self.font.render(label, True, (255, 255, 255))
             text_rect = text_surf.get_rect(center=rect.center)
-            # open slot menu -> add defence
             screen.blit(text_surf, text_rect)
 
-    def draw_slot_menu(self, screen):
-        if not self.slot_menu_open:
+    def draw_defence_popup(self, screen):
+        if not self.defence_popup_open or self.defence_popup_slot is None:
             return
-        draw_slot_menu_ui(screen, self.font, self.slot_menu_items)
+
+        defence = self.slot_defences[self.defence_popup_slot]
+        if defence is None:
+            self.close_defence_popup()
+            return
+
+        self.defence_popup_layout = build_defence_popup_layout(defence)
+        draw_defence_popup_ui(screen, self.font, defence, self.defence_popup_layout)
 
     def upgrade_selected_slot(self):
         if self.selected_slot is None:
@@ -425,9 +417,8 @@ class Game:
                     self.shop_open = not self.shop_open
                     # when opening shop, close other menus
                     if self.shop_open:
-                        self.close_slot_menu()
+                        self.close_defence_popup()
                         self.close_choose_defence_menu()
-                        self.swap_source_slot = None
                         self.selected_slot = None
 
             if event.type == pygame.MOUSEBUTTONDOWN:
@@ -438,7 +429,8 @@ class Game:
                     clicked_icon = self.action_bar.handle_click(mouse_pos)
                     if clicked_icon == "shop":
                         self.shop_open = True
-                        # maybe also close other menus, etc.
+                        self.close_defence_popup()
+                        self.close_choose_defence_menu()
                         return
 
                     if clicked_icon == "next_wave":
@@ -491,63 +483,44 @@ class Game:
                         self.selected_slot = None
                         return
 
-                    # 4) Swap target selection
-                    if self.swap_source_slot is not None:
-                        slot_rects = compute_slot_rects(
-                            self.screen, len(self.slot_labels)
-                        )
-                        slot_index = get_slot_index_at_pos(slot_rects, mouse_pos)
+                    # 2) Defence detail popup handling (modal)
+                    if self.defence_popup_open:
+                        layout = self.defence_popup_layout
+                        if (
+                            layout is None
+                            and self.defence_popup_slot is not None
+                            and self.slot_defences[self.defence_popup_slot] is not None
+                        ):
+                            defence = self.slot_defences[self.defence_popup_slot]
+                            if defence is not None:
+                                layout = build_defence_popup_layout(defence)
+                                self.defence_popup_layout = layout
 
-                        if slot_index is not None:
-                            if slot_index == self.swap_source_slot:
-                                # clicked same slot => cancel swap
-                                self.swap_source_slot = None
-                                self.selected_slot = None
-                            else:
-                                # perform swap
-                                a = self.swap_source_slot
-                                b = slot_index
-                                self.slot_defences[a], self.slot_defences[b] = (
-                                    self.slot_defences[b],
-                                    self.slot_defences[a],
-                                )
-                                self.swap_source_slot = None
-                                self.selected_slot = None
+                        if layout is not None:
+                            for action, _label, rect in layout.button_rects:
+                                if rect.collidepoint(mouse_pos):
+                                    self.handle_defence_popup_action(action)
+                                    return
 
-                            self.close_slot_menu()
-                            return
-                        else:
-                            # clicked somewhere else -> cancel swap + close menu
-                            self.swap_source_slot = None
-                            self.selected_slot = None
-                            self.close_slot_menu()
-                            return
-
-                    # 5) Slot popup menu (Swap / Upgrade / Destroy / Add)
-                    if self.slot_menu_open:
-                        for label, rect in self.slot_menu_items:
-                            if rect.collidepoint(mouse_pos):
-                                if self.slot_menu_slot is not None:
-                                    self.handle_slot_menu_choice(
-                                        self.slot_menu_slot, label
-                                    )
+                            if layout.popup_rect.collidepoint(mouse_pos):
                                 return
-                        # clicked outside menu -> close
-                        self.close_slot_menu()
-                        self.selected_slot = None
 
-                    # 6) Normal slot click (open menu)
+                        self.close_defence_popup()
+                        self.selected_slot = None
+                        return
+
+                    # 3) Normal slot click (open defence popup or choose menu)
                     slot_rects = compute_slot_rects(self.screen, len(self.slot_labels))
                     slot_index = get_slot_index_at_pos(slot_rects, mouse_pos)
 
                     if slot_index is not None:
-                        self.open_slot_menu(slot_index)
+                        self.open_defence_popup(slot_index)
                         return
 
                     # Clicked somewhere else -> reset
-                    self.swap_source_slot = None
                     self.selected_slot = None
-                    self.close_slot_menu()
+                    self.close_defence_popup()
+                    self.close_choose_defence_menu()
                     return
 
                 # Right click here
@@ -722,7 +695,7 @@ class Game:
         )
 
         # 11) Menus & popups on top
-        self.draw_slot_menu(self.screen)
+        self.draw_defence_popup(self.screen)
         self.draw_choose_defence_menu(self.screen)
         draw_shop_popup(self.screen, self.font, self.shop_open, self.owned_defences)
 
