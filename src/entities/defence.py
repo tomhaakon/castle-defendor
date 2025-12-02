@@ -115,7 +115,7 @@ class Defence:
 
     def draw(self, screen):
         # just HP bar (no square; icons are drawn in UI slots)
-        bar_width = 40
+        bar_width = 50
         bar_height = 5
         offset_y = -55
 
@@ -127,6 +127,10 @@ class Defence:
         else:
             ratio = 0.0
 
+        # hp bar background
+        pygame.draw.rect(
+            screen, (0, 0, 0), (x - 1, y - 1, int(bar_width) + 2, bar_height + 2)
+        )
         # HP BAR
         pygame.draw.rect(
             screen,

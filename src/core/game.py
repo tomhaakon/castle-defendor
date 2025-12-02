@@ -244,6 +244,7 @@ class Game:
 
             text_surf = self.font.render(label, True, (255, 255, 255))
             text_rect = text_surf.get_rect(center=rect.center)
+            # open slot menu -> add defence
             screen.blit(text_surf, text_rect)
 
     def draw_slot_menu(self, screen):

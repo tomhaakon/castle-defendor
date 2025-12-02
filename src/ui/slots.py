@@ -79,10 +79,12 @@ def draw_slots(
     for i, (label, rect) in enumerate(zip(labels, slot_rects)):
         defence = slot_defences[i]
 
-        # Slot label
-        label_surf = font.render(label, True, (220, 220, 220))
-        label_rect = label_surf.get_rect(midleft=(rect.left + 8, rect.top + 85))
-        screen.blit(label_surf, label_rect)
+        if slot_defences[i] is None:
+
+            # Slot label
+            label_surf = font.render(label, True, (220, 220, 220))
+            label_rect = label_surf.get_rect(midleft=(rect.left + 25, rect.top + 35))
+            screen.blit(label_surf, label_rect)
 
         if defence is not None:
             # try to get a sprite for this defence type
@@ -112,7 +114,7 @@ def draw_slots(
 
             # level text above the defence icon
             level_text = font.render(f"Lv{defence.level}", True, (255, 255, 255))
-            lvl_rect = level_text.get_rect(midbottom=(rect.centerx, rect.bottom - 90))
+            lvl_rect = level_text.get_rect(midbottom=(rect.centerx, rect.bottom - 110))
             screen.blit(level_text, lvl_rect)
 
 
