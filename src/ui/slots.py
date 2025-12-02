@@ -169,3 +169,132 @@ def draw_slot_spots(screen: pygame.Surface, slot_rects: list[pygame.Rect]):
     for rect in slot_rects:
         spot_rect = SLOT_ICON.get_rect(center=(rect.centerx + ox, rect.centery + oy))
         screen.blit(SLOT_ICON, spot_rect)
+
+
+def get_defence_icon(defence_type: str | None) -> pygame.Surface:
+    if defence_type is None:
+        return SLOT_ICON
+    return DEFENCE_ICONS.get(defence_type, SLOT_ICON)
+
+
+def build_stat_lines(defence) -> list[str]:
+    if defence is None:
+        return ["Empty slot", "Pick a defence to place here."]
+
+    return [
+        f"Type: {defence.defence_type.title()}",
+        f"Level: {defence.level}",
+        f"Damage: {defence.base_damage}",
+        f"Range: {defence.base_range}",
+        f"Cooldown: {defence.base_cooldown:.2f}s",
+        f"Projectile speed: {defence.base_projectile_speed}",
+        f"Crit: {int(defence.crit_chance * 100)}% x{defence.crit_multiplier}",
+        f"Max HP: {defence.max_hp}",
+    ]
+
+
+def build_slot_popup(
+    slot_rect: pygame.Rect,
+    defence,
+    buttons: list[str],
+    extra_lines: list[str] | None = None,
+):
+    """Prepare geometry for the detailed slot popup."""
+
+    icon_surf = get_defence_icon(getattr(defence, "defence_type", None))
+
+    padding = 16
+    popup_width = 460
+    icon_area_width = 140
+    icon_area_height = 140
+    button_width = 190
+    button_height = 34
+    button_spacing = 8
+
+    stats_lines = build_stat_lines(defence)
+    if extra_lines:
+        stats_lines.extend(extra_lines)
+
+    button_area_height = (
+        len(buttons) * (button_height + button_spacing) - button_spacing
+        if buttons
+        else 0
+    )
+    stats_area_height = len(stats_lines) * 20
+    content_height = max(icon_area_height, button_area_height) + padding + stats_area_height
+    popup_height = padding * 2 + content_height
+
+    x = slot_rect.centerx - popup_width // 2
+    x = max(10, min(x, WIDTH - popup_width - 10))
+    y = slot_rect.top - popup_height - 12
+    if y < 10:
+        y = slot_rect.bottom + 12
+
+    popup_rect = pygame.Rect(x, y, popup_width, popup_height)
+
+    icon_rect = icon_surf.get_rect()
+    icon_rect.center = (
+        popup_rect.left + padding + icon_area_width // 2,
+        popup_rect.top + padding + icon_area_height // 2,
+    )
+
+    buttons_rects: list[tuple[str, pygame.Rect]] = []
+    right_x = popup_rect.left + padding + icon_area_width + padding
+    right_y = popup_rect.top + padding
+
+    for i, label in enumerate(buttons):
+        r = pygame.Rect(
+            right_x,
+            right_y + i * (button_height + button_spacing),
+            button_width,
+            button_height,
+        )
+        buttons_rects.append((label, r))
+
+    stats_start_y = popup_rect.top + padding + max(icon_area_height, button_area_height) + padding
+
+    return {
+        "rect": popup_rect,
+        "icon": icon_surf,
+        "icon_rect": icon_rect,
+        "buttons": buttons_rects,
+        "stats": stats_lines,
+        "stats_start_y": stats_start_y,
+    }
+
+
+def draw_slot_popup(
+    screen: pygame.Surface,
+    font: pygame.font.Font,
+    popup_data: dict,
+):
+    rect: pygame.Rect = popup_data["rect"]
+    pygame.draw.rect(screen, (40, 42, 60), rect, border_radius=8)
+    pygame.draw.rect(screen, (0, 0, 0), rect, width=2, border_radius=8)
+
+    # icon side
+    icon = popup_data["icon"]
+    icon_rect: pygame.Rect = popup_data["icon_rect"]
+    pygame.draw.rect(
+        screen, (58, 60, 80), (icon_rect.left - 8, icon_rect.top - 8, 156, 156), 0, 8
+    )
+    pygame.draw.rect(
+        screen, (15, 15, 25), (icon_rect.left - 8, icon_rect.top - 8, 156, 156), 2, 8
+    )
+    screen.blit(icon, icon_rect)
+
+    # buttons
+    for label, brect in popup_data["buttons"]:
+        pygame.draw.rect(screen, (70, 72, 98), brect, border_radius=4)
+        pygame.draw.rect(screen, (10, 10, 15), brect, width=1, border_radius=4)
+        text_surf = font.render(label, True, (255, 255, 255))
+        text_rect = text_surf.get_rect(center=brect.center)
+        screen.blit(text_surf, text_rect)
+
+    # stats
+    y = popup_data["stats_start_y"]
+    for line in popup_data["stats"]:
+        text_surf = font.render(line, True, (230, 230, 230))
+        text_rect = text_surf.get_rect(left=rect.left + 24, top=y)
+        screen.blit(text_surf, text_rect)
+        y += 20

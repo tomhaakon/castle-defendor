@@ -62,6 +62,10 @@ class Defence:
     def get_upgrade_cost(self) -> int:
         return int(self.base_cost * self.level)
 
+    def get_sell_value(self) -> int:
+        """Gold returned when selling this defence."""
+        return int(self.base_cost * self.level * 0.6)
+
     def update(self, dt, enemies, projectiles):
         # decay shake timer every frame
         if self.shake_time > 0:
