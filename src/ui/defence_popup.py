@@ -39,51 +39,80 @@ def calculate_defence_snapshot(defence) -> dict:
 
 
 def build_defence_popup_layout(defence) -> DefencePopupLayout:
-    popup_width = 520
-    popup_height = 260
+    popup_width = max(480, int(WIDTH * 0.6))
+    padding = 16
+    title_space = 40
+    center = (WIDTH // 2, HEIGHT // 2 - 20)
 
-    popup_rect = pygame.Rect(0, 0, popup_width, popup_height)
-    popup_rect.center = (WIDTH // 2, HEIGHT // 2 - 20)
+    usable_width = popup_width - 2 * padding
+    portrait_width = int(usable_width * 0.4)  # 2/5 for portrait
+    stats_width = int(usable_width * 0.4)  # 2/5 for stats
+    buttons_width = usable_width - portrait_width - stats_width  # 1/5 for buttons
 
     icon = DEFENCE_ICONS.get(defence.defence_type)
     if icon is None:
-        icon_rect = pygame.Rect(popup_rect.left + 20, popup_rect.top + 20, 120, 120)
+        icon_rect = pygame.Rect(0, 0, 96, 96)
     else:
-        icon_rect = icon.get_rect(topleft=(popup_rect.left + 20, popup_rect.top + 20))
+        icon_rect = icon.get_rect().copy()
 
-    button_width = 200
-    button_height = 36
-    button_x = icon_rect.right + 24
-    button_y = popup_rect.top + 24
+    button_size = 16
+    button_spacing = 14
 
     snapshot = calculate_defence_snapshot(defence)
 
+    # Predict content height to size the popup before positioning
+    stats_line_height = 18
+    stats_height = stats_line_height * 6
+    buttons_height = 3 * button_size + 2 * button_spacing
+    content_height = max(icon_rect.height, stats_height, buttons_height)
+    popup_height = title_space + content_height + padding
+
+    popup_rect = pygame.Rect(0, 0, popup_width, popup_height)
+    popup_rect.center = center
+
+    content_top = popup_rect.top + title_space
+    portrait_area_left = popup_rect.left + padding
+    icon_rect.center = (
+        portrait_area_left + portrait_width // 2,
+        content_top + content_height // 2,
+    )
+
+    stats_origin_x = portrait_area_left + portrait_width + padding
+    stats_origin = (stats_origin_x, content_top)
+
+    button_area_x = stats_origin_x + stats_width + padding
     button_rects: list[tuple[str, str, pygame.Rect]] = [
         (
             "upgrade",
             f"Upgrade ({snapshot['upgrade_cost']}g)",
-            pygame.Rect(button_x, button_y, button_width, button_height),
+            pygame.Rect(
+                button_area_x + buttons_width - button_size,
+                content_top,
+                button_size,
+                button_size,
+            ),
         ),
         (
             "remove",
             "Remove from slot",
             pygame.Rect(
-                button_x, button_y + (button_height + 10), button_width, button_height
+                button_area_x + buttons_width - button_size,
+                content_top + (button_size + button_spacing),
+                button_size,
+                button_size,
             ),
         ),
         (
             "sell",
             f"Sell ({snapshot['sell_value']}g)",
             pygame.Rect(
-                button_x,
-                button_y + 2 * (button_height + 10),
-                button_width,
-                button_height,
+                button_area_x + buttons_width - button_size,
+                content_top + 2 * (button_size + button_spacing),
+                button_size,
+                button_size,
             ),
         ),
     ]
-
-    stats_origin = (button_x, button_y + 3 * (button_height + 10) + 20)
 
     return DefencePopupLayout(
         popup_rect=popup_rect,
@@ -116,14 +145,21 @@ def draw_defence_popup(screen, font, defence, layout: DefencePopupLayout):
 
     snapshot = calculate_defence_snapshot(defence)
 
-    for action, label, rect in layout.button_rects:
-        base_color = (80, 110, 160) if action == "upgrade" else (70, 90, 120)
-        pygame.draw.rect(screen, base_color, rect, border_radius=6)
-        pygame.draw.rect(screen, (0, 0, 0), rect, width=1, border_radius=6)
+    stats_font = pygame.font.SysFont(None, max(font.get_height() - 6, 12))
 
-        text_surf = font.render(label, True, (255, 255, 255))
-        text_rect = text_surf.get_rect(center=rect.center)
-        screen.blit(text_surf, text_rect)
+    for action, label, rect in layout.button_rects:
+        base_color = (90, 130, 190) if action == "upgrade" else (70, 90, 120)
+        pygame.draw.rect(screen, base_color, rect, border_radius=4)
+        pygame.draw.rect(screen, (0, 0, 0), rect, width=1, border_radius=4)
+
+        abbrev = label[0].upper()
+        abbrev_surf = stats_font.render(abbrev, True, (255, 255, 255))
+        abbrev_rect = abbrev_surf.get_rect(center=rect.center)
+        screen.blit(abbrev_surf, abbrev_rect)
+
+        label_surf = stats_font.render(label, True, (220, 220, 220))
+        label_rect = label_surf.get_rect(right=rect.left - 6, centery=rect.centery)
+        screen.blit(label_surf, label_rect)
 
     stats_x, stats_y = layout.stats_origin
     stats_lines = [
@@ -136,6 +172,6 @@ def draw_defence_popup(screen, font, defence, layout: DefencePopupLayout):
     ]
 
     for i, line in enumerate(stats_lines):
-        text_surf = font.render(line, True, (230, 230, 230))
-        text_rect = text_surf.get_rect(topleft=(stats_x, stats_y + i * 22))
+        text_surf = stats_font.render(line, True, (230, 230, 230))
+        text_rect = text_surf.get_rect(topleft=(stats_x, stats_y + i * 18))
         screen.blit(text_surf, text_rect)
