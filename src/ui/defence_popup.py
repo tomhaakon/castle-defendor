@@ -11,6 +11,7 @@ class DefencePopupLayout:
     icon_rect: pygame.Rect
     button_rects: list[tuple[str, str, pygame.Rect]]
     stats_origin: tuple[int, int]
+    stats_width: int
 
 
 def calculate_defence_snapshot(defence) -> dict:
@@ -39,57 +40,74 @@ def calculate_defence_snapshot(defence) -> dict:
 
 
 def build_defence_popup_layout(defence) -> DefencePopupLayout:
-    popup_width = 520
-    popup_height = 260
+    popup_width = int(WIDTH * 0.6)
+    popup_height = 320
 
     popup_rect = pygame.Rect(0, 0, popup_width, popup_height)
     popup_rect.center = (WIDTH // 2, HEIGHT // 2 - 20)
 
+    content_padding = 24
+    title_offset = 56
+
+    content_left = popup_rect.left + content_padding
+    content_top = popup_rect.top + title_offset
+    content_width = popup_width - 2 * content_padding
+
+    icon_col_width = int(content_width * 0.4)
+    stats_col_width = int(content_width * 0.4)
+    button_col_width = content_width - icon_col_width - stats_col_width
+
     icon = DEFENCE_ICONS.get(defence.defence_type)
     if icon is None:
-        icon_rect = pygame.Rect(popup_rect.left + 20, popup_rect.top + 20, 120, 120)
+        icon_rect = pygame.Rect(0, 0, icon_col_width - 12, icon_col_width - 12)
+        icon_rect.topleft = (content_left + 6, content_top)
     else:
-        icon_rect = icon.get_rect(topleft=(popup_rect.left + 20, popup_rect.top + 20))
+        icon_rect = icon.get_rect()
+        icon_rect.topleft = (
+            content_left + (icon_col_width - icon_rect.width) // 2,
+            content_top,
+        )
 
-    button_width = 200
-    button_height = 36
-    button_x = icon_rect.right + 24
-    button_y = popup_rect.top + 24
-
-    snapshot = calculate_defence_snapshot(defence)
+    button_size = 16
+    button_spacing = 12
+    button_x = content_left + icon_col_width + stats_col_width + (
+        button_col_width - button_size
+    ) // 2
+    button_y = content_top
 
     button_rects: list[tuple[str, str, pygame.Rect]] = [
         (
             "upgrade",
-            f"Upgrade ({snapshot['upgrade_cost']}g)",
-            pygame.Rect(button_x, button_y, button_width, button_height),
+            "Upgrade",
+            pygame.Rect(button_x, button_y, button_size, button_size),
         ),
         (
             "remove",
-            "Remove from slot",
+            "Remove",
             pygame.Rect(
-                button_x, button_y + (button_height + 10), button_width, button_height
+                button_x, button_y + (button_size + button_spacing), button_size, button_size
             ),
         ),
         (
             "sell",
-            f"Sell ({snapshot['sell_value']}g)",
+            "Sell",
             pygame.Rect(
                 button_x,
-                button_y + 2 * (button_height + 10),
-                button_width,
-                button_height,
+                button_y + 2 * (button_size + button_spacing),
+                button_size,
+                button_size,
             ),
         ),
     ]
 
-    stats_origin = (button_x, button_y + 3 * (button_height + 10) + 20)
+    stats_origin = (content_left + icon_col_width + 12, content_top)
 
     return DefencePopupLayout(
         popup_rect=popup_rect,
         icon_rect=icon_rect,
         button_rects=button_rects,
         stats_origin=stats_origin,
+        stats_width=stats_col_width - 24,
     )
 
 
@@ -116,12 +134,24 @@ def draw_defence_popup(screen, font, defence, layout: DefencePopupLayout):
 
     snapshot = calculate_defence_snapshot(defence)
 
+    stats_font_size = max(14, font.get_height() - 6)
+    stats_font = pygame.font.Font(None, stats_font_size)
+
+    button_font_size = max(12, font.get_height() - 10)
+    button_font = pygame.font.Font(None, button_font_size)
+
     for action, label, rect in layout.button_rects:
         base_color = (80, 110, 160) if action == "upgrade" else (70, 90, 120)
-        pygame.draw.rect(screen, base_color, rect, border_radius=6)
-        pygame.draw.rect(screen, (0, 0, 0), rect, width=1, border_radius=6)
+        pygame.draw.rect(screen, base_color, rect, border_radius=4)
+        pygame.draw.rect(screen, (0, 0, 0), rect, width=1, border_radius=4)
 
-        text_surf = font.render(label, True, (255, 255, 255))
+        symbol = {
+            "upgrade": "U",
+            "remove": "X",
+            "sell": "$",
+        }.get(action, label[:1])
+
+        text_surf = button_font.render(symbol, True, (255, 255, 255))
         text_rect = text_surf.get_rect(center=rect.center)
         screen.blit(text_surf, text_rect)
 
@@ -133,9 +163,28 @@ def draw_defence_popup(screen, font, defence, layout: DefencePopupLayout):
         f"Cooldown: {snapshot['cooldown']:.2f}s",
         f"Projectile Speed: {snapshot['projectile_speed']:.0f}",
         f"Crit: {snapshot['crit_chance']:.0f}% x{snapshot['crit_multiplier']:.1f}",
+        f"Upgrade: {snapshot['upgrade_cost']}g",
+        f"Sell: {snapshot['sell_value']}g",
     ]
 
-    for i, line in enumerate(stats_lines):
-        text_surf = font.render(line, True, (230, 230, 230))
-        text_rect = text_surf.get_rect(topleft=(stats_x, stats_y + i * 22))
+    wrapped_lines: list[str] = []
+    for line in stats_lines:
+        words = line.split()
+        if not words:
+            continue
+
+        current = words[0]
+        for word in words[1:]:
+            candidate = f"{current} {word}"
+            if stats_font.size(candidate)[0] <= layout.stats_width:
+                current = candidate
+            else:
+                wrapped_lines.append(current)
+                current = word
+        wrapped_lines.append(current)
+
+    line_height = stats_font.get_linesize()
+    for i, line in enumerate(wrapped_lines):
+        text_surf = stats_font.render(line, True, (230, 230, 230))
+        text_rect = text_surf.get_rect(topleft=(stats_x, stats_y + i * line_height))
         screen.blit(text_surf, text_rect)
